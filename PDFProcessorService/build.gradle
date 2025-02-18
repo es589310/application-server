@@ -1,0 +1,72 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.4.2'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.example'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+//Spring Cloud BOM driverlarını avtomatik götürməlidir
+//dependencyManagement {
+//    imports {
+//        mavenBom "org.springframework.cloud:spring-cloud-dependencies:2023.0.1"
+//    }
+//}
+
+
+//Spring Cloud Spring Repositories üzərindən götürülür:
+repositories {
+    mavenCentral()
+    maven { url 'https://repo.spring.io/release' }
+    maven { url 'https://repo.spring.io/milestone' }
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.postgresql:postgresql'
+
+
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    implementation 'org.springframework.boot:spring-boot-starter-webflux' // WebClient için
+
+//    implementation 'org.springframework.boot:spring-boot-starter-restclient' // RestClient için
+
+
+    implementation 'com.google.cloud:spring-cloud-gcp-starter-storage:4.10.2' // Google Cloud Storage
+//    implementation 'org.springframework.boot:spring-boot-starter-cloud-aws' // AWS S3 için
+
+    //mapstruct
+    implementation 'org.mapstruct:mapstruct:1.5.5.Final'
+    annotationProcessor 'org.mapstruct:mapstruct-processor:1.5.5.Final'
+
+    //swagger open
+    implementation group: 'org.springdoc', name: 'springdoc-openapi-starter-webmvc-ui', version: '2.8.4' //spring boot 3.3.3 openapi 2.7.0 ilə işləmədi
+    //#json olaraq göstərir dataları
+    implementation group: 'org.springdoc', name: 'springdoc-openapi-starter-webmvc-api', version: '2.8.4' //spring boot 3.3.3 openapi 2.7.0 ilə işləmədi
+
+    implementation 'org.apache.pdfbox:pdfbox:2.0.27'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
