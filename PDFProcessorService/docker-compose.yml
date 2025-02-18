@@ -1,0 +1,11 @@
+services:
+  postgres:
+    image: postgres:latest
+    container_name: pdf_processor_db
+    environment:
+      POSTGRES_DB: pdf_processor
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 232323
+    ports:
+      - "5438:5432"
+    restart: always
