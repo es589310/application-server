@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -31,8 +32,10 @@ public class PdfProcessorService {
     public void processPdf(MultipartFile file) throws Exception {
         try {
             String extractedText = extractTextFromPdf(file.getInputStream()); //PDFTextStripper ilə PDF-dən mətni çıxarır
+            log.info("Extracted text length: {}", extractedText.length());
 
             List<String[]> tableData = extractTableData(file.getInputStream());
+            log.info("Extracted table data: {} rows", tableData.size());
 
             // PDFEntity'de metin var mı kontrol et
             PdfEntity pdfEntity = pdfRepository.findByContent(extractedText);
@@ -42,15 +45,18 @@ public class PdfProcessorService {
                 pdfEntity.setContent(extractedText); // Çıkarılan metni kaydet
                 pdfEntity.setUploadDate(LocalDateTime.now()); // Yükleme tarihini kaydet
                 pdfRepository.save(pdfEntity); // PDF verisini veritabanına kaydet
+                log.info("PDF entity saved with ID: {}", pdfEntity.getId());
 
                 // AI servisine gönder ve sonucu al
                 String aiResult = aiClient.analyzeText(extractedText);
+                log.info("AI analysis result: {}", aiResult);
 
                 // AI sonucu ReportEntity olarak kaydet
                 ReportEntity reportEntity = new ReportEntity();
                 reportEntity.setPdfEntity(pdfEntity); // İlgili PDF ile ilişkilendir
                 reportEntity.setAnalysisResult(aiResult); // Analiz sonucunu kaydet
                 reportRepository.save(reportEntity); // Raporu veritabanına kaydet
+                log.info("Report entity saved with ID: {}", reportEntity.getId());
 
                 // PDF'i Google Cloud Storage'a yükle
                 String uploadedFileLink = googleCloudStorageService.uploadFile(file);
@@ -58,9 +64,15 @@ public class PdfProcessorService {
 
                 // Table data işle
                 processTableData(tableData); // Tablo verilerini işle
+            }else {
+                log.info("PDF content already exists in database with ID: {}", pdfEntity.getId());
             }
         } catch (IOException e) { // IOException durumunda hata fırlat
+            log.error("Failed to process PDF", e);
             throw new RuntimeException("Failed to process PDF", e); // Hata mesajı ile birlikte fırlat
+        } catch (DataIntegrityViolationException e) {
+            log.error("Data integrity violation while saving PDF", e);
+            throw new RuntimeException("Data integrity violation while saving PDF", e);
         }
     }
 

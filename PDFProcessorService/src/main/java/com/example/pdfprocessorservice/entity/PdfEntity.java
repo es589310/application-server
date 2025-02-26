@@ -7,6 +7,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "pdf_files")
@@ -22,7 +24,12 @@ public class PdfEntity {
 
     private String fileName;
     private String filePath;
-    private String content;
     private LocalDateTime uploadDate;
+
+    @Column(columnDefinition = "TEXT")
+    private String content;
+
+    @OneToMany(mappedBy = "pdfEntity", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ReportEntity> reports = new ArrayList<>();
 
 }

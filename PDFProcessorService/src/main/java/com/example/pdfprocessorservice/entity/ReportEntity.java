@@ -19,6 +19,7 @@ public class ReportEntity {
     private Long id;
 
     @ManyToOne
+    @JoinColumn(name = "pdf_entity_id", nullable = false)
     private PdfEntity pdfEntity;
 
     private String analysisResult;
