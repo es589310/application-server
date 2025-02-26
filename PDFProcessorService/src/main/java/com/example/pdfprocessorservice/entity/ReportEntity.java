@@ -1,25 +1,25 @@
 package com.example.pdfprocessorservice.entity;
 
+
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-@Entity
-@Table(name = "pdf_files")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class PdfFile {
-
+@Entity
+@Table(name = "ai_response_files")
+public class ReportEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private String fileName;
+    @ManyToOne
+    private PdfEntity pdfEntity;
 
-    private byte[] fileData;
-
+    private String analysisResult;
 }
