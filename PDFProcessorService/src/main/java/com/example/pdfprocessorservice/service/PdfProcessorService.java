@@ -129,33 +129,35 @@ public class PdfProcessorService {
         List<String[]> tableData = new ArrayList<>(); // Table məlumatlarını tutmaq üçün list hazırlanır
 
         String[] lines = text.split("\n"); //regex ilə mətni sətirlərə ayrırır
-//            String[] columns = line.split("\\|"); // Sütunlar "|" ilə ayrılıbsa
 
-
-            // table başlıqlarının axtarışı - problem burda ola bilər!!!!!!
+        // table başlıqlarının axtarışı
         int startIndex = -1;
         for (int i = 0; i < lines.length; i++) {
-            if (lines[i].contains("Tarix") && lines[i].contains("Təyinat") && lines[i].contains("Məbləğ") && lines[i].contains("Balans")) {
-                startIndex = i + 1; // başlığın altından başlaması üçün
+            if (lines[i].contains("Tarix") && lines[i].contains("Təyinat") &&
+                    lines[i].contains("Məbləğ") && lines[i].contains("Komissiya") &&
+                    lines[i].contains("ƏDV") && lines[i].contains("Balans")) {
+                startIndex = i + 1;
                 break;
             }
         }
 
         // Dataları çıxarmaq üçün
         if (startIndex != -1) {
-        for (int i = startIndex; i < lines.length; i++) { // Sətirləri yoxlayır
-            String line = lines[i].trim(); // sətirdəki lazımsız boşluqları silmək üçün
-            if (line.isEmpty()) continue; //
+            for (int i = startIndex; i < lines.length; i++) { // Sətirləri yoxlayır
+                String line = lines[i].trim(); // sətirdəki lazımsız boşluqları silmək üçün
+                if (line.isEmpty()) continue;
 
-            // Sətiri sütuna ayırmalı
-            String[] columns = line.split("\\s{2,}"); // Sətirin sütuna ayrılması iki və ya daha çox olan boşluqlara ayırmalı
-            if (columns.length >= 4) {
-                tableData.add(columns);
+                // Sətiri sütuna ayırmalı
+                String[] columns = line.split("\\s{2,}"); // İki və daha çox boşluğa görə bölünmə
+
+                if (columns.length >= 6) {
+                    tableData.add(columns);
+                }
             }
+        } else {
+            log.error("No columns found in text");
         }
-            }else {
-                log.error("Başlıq tapılmadı");
-            }
+
         return tableData;
     }
 
