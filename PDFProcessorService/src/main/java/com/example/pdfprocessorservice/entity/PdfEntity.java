@@ -10,12 +10,12 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-@Entity
-@Table(name = "pdf_files")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@Entity
+@Table(name = "pdf_files")
 public class PdfEntity {
 
     @Id
@@ -33,3 +33,5 @@ public class PdfEntity {
     private List<ReportEntity> reports = new ArrayList<>();
 
 }
+
+

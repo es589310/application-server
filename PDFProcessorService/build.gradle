@@ -36,12 +36,7 @@ dependencies {
 	implementation 'org.postgresql:postgresql'
 
 	implementation 'org.springframework.cloud:spring-cloud-starter-openfeign:4.2.0'
-//	    implementation 'org.springframework.cloud:spring-cloud-starter-openfeign'
-//	implementation 'org.springframework.cloud:spring-cloud-starter-openfeign:4.1.1'
-
-	//    implementation 'com.google.cloud:spring-cloud-gcp-starter-storage:4.10.2' // Google Cloud Storage
-	//    implementation 'org.springframework.cloud:spring-cloud-gcp-starter-storage'
-	//    implementation 'com.google.cloud:google-cloud-storage'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'com.google.cloud:google-cloud-storage:2.20.1'
 
 	//mapstruct
