@@ -39,15 +39,15 @@ public class GoogleCloudStorageService {
 
             try (InputStream fileInputStream = new ByteArrayInputStream(fileBytes)) {
                 Blob blob = storage.create(blobInfo, fileInputStream);
-                log.info("Dosya {} bucket'e yüklendi: {}", fileName, bucketName);
-                return blob.getMediaLink();
+                log.info("File uploaded to {} bucket: {}", fileName, bucketName);
+                return blob.getSelfLink();
             }
         } catch (IOException e) {
-            log.error("Google Cloud Storage'a dosya yüklenemedi: {}", fileName, e);
-            throw new FileUploadException("Dosya yükleme hatası: " + fileName, e);
+            log.error("Unable to upload file to Google Cloud Storage: {}", fileName, e);
+            throw new FileUploadException("File upload error: " + fileName, e);
         } catch (Exception e) {
-            log.error("Dosya yükleme sırasında beklenmeyen hata: {}", fileName, e);
-            throw new GoogleCloudStorageException("Dosya yükleme sırasında beklenmeyen hata: " + fileName, e);
+            log.error("Unexpected error during file upload: {}", fileName, e);
+            throw new GoogleCloudStorageException("Unexpected error during file upload: " + fileName, e);
         }
     }
 }
