@@ -1,13 +1,17 @@
 package com.example.pdfprocessorservice.service;
 
 import com.example.pdfprocessorservice.client.AIClient;
+import com.example.pdfprocessorservice.entity.HeaderEntity;
 import com.example.pdfprocessorservice.entity.PdfEntity;
 import com.example.pdfprocessorservice.entity.ReportEntity;
 import com.example.pdfprocessorservice.exception.AiServiceException;
 import com.example.pdfprocessorservice.exception.FileUploadException;
 import com.example.pdfprocessorservice.exception.PdfProcessingException;
+import com.example.pdfprocessorservice.repository.HeaderRepository;
 import com.example.pdfprocessorservice.repository.PdfRepository;
 import com.example.pdfprocessorservice.repository.ReportRepository;
+import com.example.pdfprocessorservice.util.CustomPDFTextStripper;
+import com.example.pdfprocessorservice.util.ImageProcessor;
 import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,7 +20,6 @@ import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.PDFRenderer;
-import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -28,6 +31,7 @@ import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -36,27 +40,36 @@ public class PdfProcessorService {
 
     private final PdfRepository pdfRepository;
     private final ReportRepository reportRepository;
+    private final HeaderRepository headerRepository;
     private final AIClient aiClient;
     private final GoogleCloudStorageService googleCloudStorageService;
     private final DatabaseMigrationService databaseMigrationService;
 
     @PostConstruct
-    public void init(){
+    public void init() {
         log.info("Starting database schema update...");
         databaseMigrationService.updateContentColumnType();
         log.info("Database schema update completed.");
     }
 
-    public void processPdf(MultipartFile file,String language) {
-        try (InputStream fileStream = file.getInputStream()){
+    public void processPdf(MultipartFile file, String language) {
+        try (InputStream fileStream = file.getInputStream()) {
 
             String extractedText = extractTextFromPdf(fileStream);
             if (extractedText.isEmpty()) {
-                extractedText = extractTextWithOCR(fileStream,language);
+                extractedText = extractTextWithOCR(fileStream, language);
             }
             log.info("Extracted text length: {}", extractedText.length());
 
             List<String[]> tableData = extractTableData(extractedText);
+
+            // Başlıkları veritabanından çekiyoruz
+            List<HeaderEntity> headerEntities = headerRepository.findAll();
+            List<String> dynamicHeaderKeywords = new ArrayList<>();
+            for (HeaderEntity headerEntity : headerEntities) {
+                dynamicHeaderKeywords.add(headerEntity.getHeaderName());
+            }
+
             log.info("Extracted table data: {} rows", tableData.size());
             log.info("Extracted text: {}", extractedText);
 
@@ -66,10 +79,11 @@ public class PdfProcessorService {
                 pdfEntity.setFileName(file.getOriginalFilename());
                 pdfEntity.setContent(extractedText);
                 pdfEntity.setUploadDate(LocalDateTime.now());
+                pdfEntity.setKeyword("This is keywords!");
                 pdfRepository.save(pdfEntity);
                 log.info("PDF entity saved with ID: {}", pdfEntity.getId());
 
-                String localAnalysisResult = analyzePdfLocally(extractedText);
+                String localAnalysisResult = analyzePdfLocally(extractedText, dynamicHeaderKeywords);
                 pdfEntity.setContent(localAnalysisResult);
                 pdfRepository.save(pdfEntity);
 
@@ -103,7 +117,7 @@ public class PdfProcessorService {
         } catch (DataIntegrityViolationException e) {
             log.error("Data integrity violation while saving PDF", e);
             throw new FileUploadException("Data integrity violation while saving PDF", e);
-        } catch (FeignException e){
+        } catch (FeignException e) {
             log.error("AI service error", e);
             throw new AiServiceException("AI service error", e);
         } catch (TesseractException e) {
@@ -113,12 +127,23 @@ public class PdfProcessorService {
 
     private String extractTextFromPdf(InputStream pdfStream) throws IOException {
         try (PDDocument document = PDDocument.load(pdfStream)) {
-            PDFTextStripper pdfStripper = new PDFTextStripper();
-            return pdfStripper.getText(document);
-        }catch (IOException e){
+            CustomPDFTextStripper pdfStripper = new CustomPDFTextStripper();
+            String extractedText = pdfStripper.getText(document);
+
+            // Bold başlıqları yoxlamaq
+            Map<String, Boolean> boldTextMap = pdfStripper.getBoldTextMap();
+            for (Map.Entry<String, Boolean> entry : boldTextMap.entrySet()) {
+                if (entry.getValue()) {
+                    log.info("Bold header detected: {}", entry.getKey());
+                }
+            }
+
+            return extractedText;
+        } catch (IOException e) {
             throw new PdfProcessingException("Failed to extract text from PDF", e);
         }
     }
+
 
     public List<String[]> extractTableData(String text) {
         List<String[]> tableData = new ArrayList<>();
@@ -130,7 +155,7 @@ public class PdfProcessorService {
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i].trim();
 
-            if (isPossibleHeader(line)) {
+            if (isPossibleHeader(line,possibleHeaders)) {
                 possibleHeaders.add(line);
                 startIndex = i + 1;
                 break;
@@ -161,35 +186,49 @@ public class PdfProcessorService {
         return tableData;
     }
 
-    private boolean isPossibleHeader(String line) {
-        try {
-            String[] headerKeywords = {"Tarix", "Təyinat", "Məbləğ", "Komissiya", "ƏDV", "Balans"};
+//    private boolean isPossibleHeader(String line) {
+//        try {
+//            String[] headerKeywords = {"Tarix", "Təyinat", "Məbləğ", "Komissiya", "ƏDV", "Balans"};
+//
+//            for (String keyword : headerKeywords) {
+//                if (line.contains(keyword)) {
+//                    return true;
+//                }
+//            }
+//            return false;
+//        } catch (Exception e) {
+//            throw new PdfProcessingException("Failed to parse PDF header", e);
+//        }
+//    }
 
+    private boolean isPossibleHeader(String line, List<String> headerKeywords) {
+        try {
             for (String keyword : headerKeywords) {
                 if (line.contains(keyword)) {
                     return true;
                 }
             }
             return false;
-        }catch (Exception e){
-            throw new PdfProcessingException("Failed to parse PDF header", e);
+        } catch (Exception e) {
+            throw new PdfProcessingException("PDF başlığı analiz edilemedi", e);
         }
     }
+
+
 
     private boolean isValidRow(String line) {
         try {
             String[] columns = line.split("\\s{2,}"); // Sütunları ayırılır
             return columns.length >= 6; //6 dan çox olmamalı
-        }catch (Exception e){
+        } catch (Exception e) {
             throw new PdfProcessingException("Failed to parse PDF row", e);
         }
     }
 
-    private String analyzePdfLocally(String extractedText) {
+    private String analyzePdfLocally(String extractedText, List<String> headerKeywords) {
         try {
-            String analysisResult = ""; // Local analiz için
+            String analysisResult = ""; // Local analiz üçün
 
-            String[] headerKeywords = {"Tarix", "Təyinat", "Məbləğ", "Komissiya", "ƏDV", "Balans"};
             for (String keyword : headerKeywords) {
                 if (extractedText.contains(keyword)) {
                     analysisResult += "Title found: " + keyword + "\n";
@@ -197,10 +236,28 @@ public class PdfProcessorService {
             }
 
             return analysisResult;
-        }catch (Exception e){
+        } catch (Exception e) {
             throw new PdfProcessingException("Failed to analyze PDF", e);
         }
     }
+
+
+//    private String analyzePdfLocally(String extractedText) {
+//        try {
+//            String analysisResult = ""; // Local analiz için
+//
+//            String[] headerKeywords = {"Tarix", "Təyinat", "Məbləğ", "Komissiya", "ƏDV", "Balans"};
+//            for (String keyword : headerKeywords) {
+//                if (extractedText.contains(keyword)) {
+//                    analysisResult += "Title found: " + keyword + "\n";
+//                }
+//            }
+//
+//            return analysisResult;
+//        } catch (Exception e) {
+//            throw new PdfProcessingException("Failed to analyze PDF", e);
+//        }
+//    }
 
     private void processTableData(List<String[]> tableData) {
         try {
@@ -209,7 +266,7 @@ public class PdfProcessorService {
 
                 reportRepository.save(new ReportEntity());
             }
-        }catch (Exception e){
+        } catch (Exception e) {
             throw new PdfProcessingException("Failed to process PDF", e);
         }
     }
@@ -217,34 +274,41 @@ public class PdfProcessorService {
 
     // Tesseract OCR ilə PDF vizuallaşdırıb mətni çıxarmaq
     private String extractTextWithOCR(InputStream pdfStream, String language) throws IOException, TesseractException {
-        // PDF-i vizuallaşdırır
         try (PDDocument document = PDDocument.load(pdfStream)) {
             PDFRenderer pdfRenderer = new PDFRenderer(document);
             StringBuilder extractedText = new StringBuilder();
 
-            // OCR ilə bütün səhifələr üstündə proses
             for (int pageIndex = 0; pageIndex < document.getNumberOfPages(); pageIndex++) {
-                BufferedImage image = pdfRenderer.renderImage(pageIndex);  // səyfələri vizuallaşdırır
-                extractedText.append(extractTextFromImage(image,language));  // Vizualı OCR ilə mətnə çevirir
+                BufferedImage image = pdfRenderer.renderImage(pageIndex);
+                BufferedImage processedImage = preprocessImageForOCR(image);
+                extractedText.append(extractTextFromImage(processedImage, language));
             }
             return extractedText.toString();
-        }catch (IOException e){
+        } catch (IOException e) {
             throw new PdfProcessingException("Failed to extract text from PDF", e);
         }
     }
 
+    private BufferedImage preprocessImageForOCR(BufferedImage image) {
+        // Burada şəkilin kontrastı artırılıb, binarizasiya (s/q) edilir
+        return new ImageProcessor().binarizeAndEnhance(image);
+    }
 
-    // Vizualdan mətni çıxarmaq (OCR)
     private String extractTextFromImage(BufferedImage image, String language) throws IOException {
         try {
             ITesseract tesseract = new Tesseract();
+            tesseract.setLanguage(language);
 
-            // Dil parametresini burada kullanıyoruz
-            tesseract.setLanguage(language);  // Dil seçimi
-            return tesseract.doOCR(image); // OCR
-        }catch (TesseractException e){
-            throw new PdfProcessingException("Failed to extract text from PDF", e);
+
+            // Parametrləri birbaşa `setTessVariable()` olmadan konfiqurasiya faylına yazın
+            tesseract.setDatapath("/usr/share/tesseract-ocr/4.00/tessdata"); // Tesseract data yolunu yoxlayın
+            tesseract.setTessVariable("tessedit_char_whitelist", "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz,.-");
+
+            return tesseract.doOCR(image);
+        } catch (TesseractException e) {
+            throw new PdfProcessingException("Failed to extract text from image", e);
         }
     }
+
 
 }

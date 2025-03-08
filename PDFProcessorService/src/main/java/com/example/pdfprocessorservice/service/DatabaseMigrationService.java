@@ -15,4 +15,9 @@ public class DatabaseMigrationService {
         jdbcTemplate.execute(sql);
     }
 
+    public void addKeywordsColumn() {
+        String sql = "ALTER TABLE pdf_files ADD COLUMN keywords TEXT";
+        jdbcTemplate.execute(sql);
+    }
+
 }

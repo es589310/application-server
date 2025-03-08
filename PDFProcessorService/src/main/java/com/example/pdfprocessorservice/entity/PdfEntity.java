@@ -27,6 +27,9 @@ public class PdfEntity {
     private LocalDateTime uploadDate;
 
     @Column(columnDefinition = "TEXT")
+    private String keyword;
+
+    @Column(columnDefinition = "TEXT")
     private String content;
 
     @OneToMany(mappedBy = "pdfEntity", cascade = CascadeType.ALL, orphanRemoval = true)

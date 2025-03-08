@@ -2,15 +2,12 @@ package com.example.pdfprocessorservice.service;
 
 import com.example.pdfprocessorservice.exception.FileUploadException;
 import com.example.pdfprocessorservice.exception.GoogleCloudStorageException;
-import com.google.cloud.storage.Blob;
-import com.google.cloud.storage.BlobInfo;
+import com.google.cloud.storage.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-import com.google.cloud.storage.Storage;
-import com.google.cloud.storage.StorageOptions;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -33,10 +30,8 @@ public class GoogleCloudStorageService {
         try {
             byte[] fileBytes = file.getBytes();
 
-            BlobInfo blobInfo = BlobInfo.newBuilder(bucketName, fileName)
-                    .setContentType(file.getContentType())
-                    .build();
-
+            BlobId blobId = BlobId.of(bucketName, fileName);
+            BlobInfo blobInfo = BlobInfo.newBuilder(blobId).setContentType(file.getContentType()).build();
             try (InputStream fileInputStream = new ByteArrayInputStream(fileBytes)) {
                 Blob blob = storage.create(blobInfo, fileInputStream);
                 log.info("File uploaded to {} bucket: {}", fileName, bucketName);
