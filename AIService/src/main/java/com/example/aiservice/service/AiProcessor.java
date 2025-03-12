@@ -8,8 +8,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
-import java.util.List;
-
 @Service
 @RequiredArgsConstructor
 public class AiProcessor {
@@ -18,7 +16,9 @@ public class AiProcessor {
 
     public AiResponse processContent(String content) {
         OpenAIRequest request = new OpenAIRequest();
-        request.setModel("text-davinci-003"); // ChatGPT modeli
+
+        // Depricated model yerine yeni model kullanımı
+        request.setModel("gpt-3.5-turbo"); // Yeni model olarak gpt-3.5-turbo
         request.setPrompt(content); // Gönderilecek metin
         request.setTemperature(0.7); // Yaratıcılık seviyesi
         request.setMax_tokens(100); // Maksimum token sayısı
