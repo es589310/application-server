@@ -1,19 +1,15 @@
 package com.example.pdfprocessorservice.entity;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 @Entity
 @Table(name = "pdf_files")
 public class PdfEntity {
@@ -22,19 +18,15 @@ public class PdfEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(nullable = false)
     private String fileName;
-    private String filePath;
+
+    @Column(nullable = false)
     private LocalDateTime uploadDate;
 
     @Column(columnDefinition = "TEXT")
-    private String keyword;
+    private String extractedText;
 
-    @Column(columnDefinition = "TEXT")
-    private String content;
-
-    @OneToMany(mappedBy = "pdfEntity", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<ReportEntity> reports = new ArrayList<>();
-
+    @Column
+    private String minioPath;
 }
-
-
