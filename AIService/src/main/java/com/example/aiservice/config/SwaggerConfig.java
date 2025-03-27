@@ -12,7 +12,7 @@ public class SwaggerConfig {
     public OpenAPI customOpenAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("PDF Processor API")
+                        .title("AI Service API")
                         .version("1.0")
                         .description("API for processing PDF files and analyzing their content."));
     }

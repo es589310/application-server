@@ -7,6 +7,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 @FeignClient(name = "PDFProcessorService", url = "${pdf.processor.service.url}")
 public interface PdfProcessorClient {
 
-    @GetMapping("/api/pdf/{pdfId}/table")
+    @GetMapping("/api/pdf/download/{pdfId}")
     String getPdfContent(@PathVariable("pdfId") String pdfId);
 }

@@ -8,10 +8,10 @@ import java.util.Optional;
 
 public interface AiAnalysisRepository extends JpaRepository<AiResponse, String> {
     // PDF ID'sine göre AI analizlerini bulma
-    List<AiResponse> findByDocumentId(String documentId);
+    List<AiResponse> findByPdfId(String pdfId);
 
     // En son yapılan AI analizini bulma
-    Optional<AiResponse> findTopByDocumentIdOrderByCreatedAtDesc(String documentId);
+    Optional<AiResponse> findTopByPdfIdOrderByCreatedAtDesc(String pdfId);
 
     // Başarılı analizleri bulma
     List<AiResponse> findBySuccess(boolean success);

@@ -1,7 +1,7 @@
 package com.example.aiservice.client;
 
-import com.example.aiservice.entity.OpenAIRequest;
-import com.example.aiservice.entity.OpenAIResponse;
+import com.example.aiservice.dto.OpenAIRequest;
+import com.example.aiservice.dto.OpenAIResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -19,6 +19,8 @@ public class OpenAIClient {
         this.webClient = webClientBuilder
                 .baseUrl("https://api.openai.com/v1")
                 .defaultHeader("Authorization", "Bearer " + apiKey)
+                .defaultHeader("Accept", "application/json")
+                .defaultHeader("Content-Type", "application/json")
                 .build();
     }
 
@@ -27,6 +29,11 @@ public class OpenAIClient {
                 .uri("/completions")
                 .bodyValue(request)
                 .retrieve()
+                .onStatus(
+                        httpStatus -> httpStatus.is4xxClientError() || httpStatus.is5xxServerError(),
+                        clientResponse -> clientResponse.bodyToMono(String.class)
+                                .flatMap(errorBody -> Mono.error(new RuntimeException("OpenAI API Error: " + errorBody)))
+                )
                 .bodyToMono(OpenAIResponse.class);
     }
 }

@@ -1,36 +1,48 @@
 package com.example.aiservice.service;
 
 import com.example.aiservice.client.OpenAIClient;
+import com.example.aiservice.dto.OpenAIRequest;
 import com.example.aiservice.entity.AiResponse;
-import com.example.aiservice.entity.OpenAIRequest;
-import com.example.aiservice.entity.OpenAIResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
-@Service
+import java.time.LocalDateTime;
+
+@Component
 @RequiredArgsConstructor
 public class AiProcessor {
-
     private final OpenAIClient openAIClient;
 
-    public AiResponse processContent(String content) {
-        OpenAIRequest request = new OpenAIRequest();
+    @Value("${openai.model}")
+    private String model;
 
-        // Depricated model yerine yeni model kullanımı
-        request.setModel("gpt-3.5-turbo"); // Yeni model olarak gpt-3.5-turbo
-        request.setPrompt(content); // Gönderilecek metin
-        request.setTemperature(0.7); // Yaratıcılık seviyesi
-        request.setMax_tokens(100); // Maksimum token sayısı
+    public Mono<AiResponse> processWithAi(String content, String analysisType) {
+        OpenAIRequest request = OpenAIRequest.builder()
+                .model(model)
+                .prompt(generatePrompt(content, analysisType))
+                .max_tokens(150)
+                .temperature(0.7)
+                .build();
 
-        OpenAIResponse response = openAIClient.generateText(request).block();
+        return openAIClient.generateText(request)
+                .map(response -> {
+                    AiResponse aiResponse = new AiResponse();
+                    aiResponse.setAnalysisResult(response.getChoices().get(0).getText());
+                    aiResponse.setSuccess(true);
+                    aiResponse.setCreatedAt(LocalDateTime.now());
+                    return aiResponse;
+                });
+    }
 
-        AiResponse aiResponse = new AiResponse();
-        if (response != null && response.getChoices() != null && !response.getChoices().isEmpty()) {
-            aiResponse.setResult(response.getChoices().get(0).getText());
-        } else {
-            aiResponse.setResult("No response from OpenAI.");
-        }
-        return aiResponse;
+    private String generatePrompt(String content, String analysisType) {
+        return String.format("""
+        You are an AI assistant performing %s analysis.
+        Carefully analyze the following text and provide a detailed, insightful response:
+
+        Text: %s
+        
+        Analysis:""", analysisType, content);
     }
 }
