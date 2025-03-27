@@ -1,27 +1,27 @@
 package com.example.pdfprocessorservice.config;
 
 import io.minio.MinioClient;
-import lombok.Getter;
-import lombok.Setter;
-import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@ConfigurationProperties(prefix = "minio")
-@Getter
-@Setter
 public class MinioConfig {
-    private String url;
+
+    @Value("${minio.endpoint}")
+    private String endpoint;
+
+    @Value("${minio.access-key}")
     private String accessKey;
+
+    @Value("${minio.secret-key}")
     private String secretKey;
-    private String bucketName;
 
     @Bean
     public MinioClient minioClient() {
         return MinioClient.builder()
-                .endpoint(url)  // MinIO'nun URL'si
-                .credentials(accessKey, secretKey)  // MinIO'nun erişim ve gizli anahtarları
+                .endpoint(endpoint)
+                .credentials(accessKey, secretKey)
                 .build();
     }
 }

@@ -1,8 +1,11 @@
 package com.example.pdfprocessorservice.util;
 
+import org.springframework.stereotype.Service;
+
 import java.awt.*;
 import java.awt.image.BufferedImage;
 
+@Service
 public class ImageProcessor {
 
     public BufferedImage binarizeAndEnhance(BufferedImage image) {
@@ -15,5 +18,8 @@ public class ImageProcessor {
         graphics.dispose();
 
         return processedImage;
+    }
+    public BufferedImage enhanceImage(BufferedImage image) {
+        return binarizeAndEnhance(image);
     }
 }

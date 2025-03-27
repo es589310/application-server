@@ -23,20 +23,20 @@ public class PdfController {
 
     private final PdfProcessorService pdfProcessorService;
 
-    // PDF yükleme ve işleme endpoint'i
+
     @PostMapping(value = "/process", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<PdfEntity> processPdf(@RequestParam("file") MultipartFile file) {
         try {
             PdfEntity processedPdf = pdfProcessorService.processPdf(file);
-            log.info("PDF processed successfully: {}", processedPdf.getFileName());
+            log.info("PDF uğurla emal edildi: {}", processedPdf.getFileName());
             return ResponseEntity.ok(processedPdf);
         } catch (IOException e) {
-            log.error("Error processing PDF: {}", e.getMessage());
+            log.error("PDF emal edilərkən səhv: {}", e.getMessage());
             return ResponseEntity.status(500).body(null);
         }
     }
 
-    // PDF indirme endpoint'i (MinIO'dan dosyayı döndürür)
+    // PDF yükləmə endpoint'i (MinIO-dan faylı döndürür)
     @GetMapping("/download/{id}")
     public ResponseEntity<InputStreamResource> downloadPdf(@PathVariable Long id) {
         try {
@@ -61,44 +61,44 @@ public class PdfController {
                     .contentType(MediaType.APPLICATION_PDF)
                     .body(resource);
         } catch (IOException e) {
-            log.error("Error downloading PDF: {}", e.getMessage());
+            log.error("PDF yüklənərkən səhv: {}", e.getMessage());
             return ResponseEntity.status(500).body(null);
         }
     }
 
-    // Yeni endpoint: Dosya adına göre PDF'leri listeleme
+    // Fayl adına görə PDF-ləri siyahıya almaq
     @GetMapping("/by-filename/{fileName}")
     public ResponseEntity<List<PdfEntity>> getPdfsByFileName(@PathVariable String fileName) {
         List<PdfEntity> pdfs = pdfProcessorService.getPdfsByFileName(fileName);
         if (pdfs.isEmpty()) {
-            log.info("No PDFs found with file name: {}", fileName);
+            log.info("Bu fayl adı ilə PDF tapılmadı: {}", fileName);
             return ResponseEntity.noContent().build();
         }
-        log.info("Found {} PDFs with file name: {}", pdfs.size(), fileName);
+        log.info("Bu fayl adı ilə {} PDF tapıldı: {}", pdfs.size(), fileName);
         return ResponseEntity.ok(pdfs);
     }
 
-    // Yeni endpoint: ExtractedText'e göre PDF bulma
+    // ExtractedText-ə görə PDF tapmaq
     @GetMapping("/by-extracted-text")
     public ResponseEntity<PdfEntity> getPdfByExtractedText(@RequestParam String extractedText) {
         PdfEntity pdfEntity = pdfProcessorService.getPdfByExtractedText(extractedText);
         if (pdfEntity == null) {
-            log.info("No PDF found with extracted text: {}", extractedText);
+            log.info("Extracted text ilə PDF tapılmadı: {}", extractedText);
             return ResponseEntity.notFound().build();
         }
-        log.info("Found PDF with extracted text: {}", pdfEntity.getFileName());
+        log.info("Extracted text ilə PDF tapıldı: {}", pdfEntity.getFileName());
         return ResponseEntity.ok(pdfEntity);
     }
 
-    // Yeni endpoint: Tüm PDF'leri listeleme
+    // Bütün PDF-ləri siyahıya almaq
     @GetMapping("/all")
     public ResponseEntity<List<PdfEntity>> getAllPdfs() {
         List<PdfEntity> allPdfs = pdfProcessorService.getAllPdfs();
         if (allPdfs.isEmpty()) {
-            log.info("No PDFs found in the database");
+            log.info("Verilənlər bazasında PDF tapılmadı");
             return ResponseEntity.noContent().build();
         }
-        log.info("Found {} PDFs in total", allPdfs.size());
+        log.info("Ümumilikdə {} PDF tapıldı", allPdfs.size());
         return ResponseEntity.ok(allPdfs);
     }
 }

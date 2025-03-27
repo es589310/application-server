@@ -29,4 +29,7 @@ public class PdfEntity {
 
     @Column
     private String minioPath;
+
+    @Column(columnDefinition = "TEXT")
+    private String metadata;
 }
