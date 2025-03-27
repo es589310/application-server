@@ -8,6 +8,5 @@ import java.util.List;
 public interface PdfRepository extends JpaRepository<PdfEntity, Long> {
     PdfEntity findByExtractedText(String extractedText);
     List<PdfEntity> findByFileName(String fileName);
-
     List<PdfEntity> findAll();
 }

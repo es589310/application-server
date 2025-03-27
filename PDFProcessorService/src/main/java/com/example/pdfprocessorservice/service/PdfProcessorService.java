@@ -41,41 +41,55 @@ public class PdfProcessorService {
     private final ImageProcessor imageProcessor;
 
     public PdfEntity processPdf(MultipartFile file) throws IOException {
-        log.info("Processing PDF: {}", file.getOriginalFilename());
+        log.info("PDF işlənir: {}", file.getOriginalFilename());
         try (InputStream inputStream = file.getInputStream();
              PDDocument document = Loader.loadPDF(inputStream.readAllBytes())) {
 
-            // PDF’nin geçerli olduğunu kontrol et
             if (document.getNumberOfPages() == 0) {
-                log.warn("Invalid PDF: No pages found in file {}", file.getOriginalFilename());
-                throw new IOException("Invalid PDF: No pages found");
+                log.warn("Yanlış PDF: {} faylında səhifə tapılmadı", file.getOriginalFilename());
+                throw new IOException("Yanlış PDF: Səhifə tapılmadı");
             }
 
-            // Tabloları çıkar (Tesseract ile, başarısızsa PDFBox ile)
-            String extractedText = extractTablesWithTesseract(document);
-
-            if (extractedText.isEmpty()) {
-                log.warn("Tesseract failed to extract tables, falling back to PDFBox for file {}", file.getOriginalFilename());
-                extractedText = extractTablesWithPDFBox(document);
+            String extractedText;
+            try {
+                extractedText = extractTablesWithTesseract(document);
+            } catch (Exception e) {
+                log.error("Tesseract ilə cədvəl çıxarılmasında xəta: {}", e.getMessage());
+                extractedText = "";
             }
 
-            // Aynı extractedText'e sahip bir PDF var mı kontrol et
+            if (!isTableContent(extractedText)) {
+                log.warn("Tesseract düzgün cədvəl məzmunu çıxara bilmədi, PDFBox-a keçilir: {}", file.getOriginalFilename());
+                try {
+                    extractedText = extractTablesWithPDFBox(document);
+                } catch (Exception e) {
+                    log.error("PDFBox ilə cədvəl çıxarılmasında xəta: {}", e.getMessage());
+                    extractedText = "";
+                }
+                if (!isTableContent(extractedText)) {
+                    log.warn("PDFBox da düzgün cədvəl məzmunu çıxara bilmədi: {}", file.getOriginalFilename());
+                }
+            }
+
             PdfEntity existingByText = pdfRepository.findByExtractedText(extractedText);
             if (existingByText != null) {
-                log.info("PDF with same extracted text already exists: {}", existingByText.getFileName());
+                log.info("Eyni çıxarılmış mətnə malik PDF artıq mövcuddur: {}", existingByText.getFileName());
                 return existingByText;
             }
 
-            // Aynı fileName'e sahip PDF'ler var mı kontrol et
             List<PdfEntity> existingByFileName = pdfRepository.findByFileName(file.getOriginalFilename());
             if (!existingByFileName.isEmpty()) {
-                log.warn("PDF with same file name already exists: {}", file.getOriginalFilename());
+                log.warn("Eyni fayl adına malik PDF artıq mövcuddur: {}", file.getOriginalFilename());
             }
 
-            // MinIO'ya dosyayı yükle
-            String filePath = saveToMinIO(file);
+            String filePath;
+            try {
+                filePath = saveToMinIO(file);
+            } catch (Exception e) {
+                log.error("MinIO-ya yükləmə xətası: {}", e.getMessage());
+                throw new IOException("MinIO-ya fayl yüklənmədi", e);
+            }
 
-            // Veritabanına kaydet
             PdfEntity pdfEntity = PdfEntity.builder()
                     .fileName(file.getOriginalFilename())
                     .uploadDate(LocalDateTime.now())
@@ -83,148 +97,324 @@ public class PdfProcessorService {
                     .minioPath(filePath)
                     .build();
 
-            PdfEntity savedEntity = pdfRepository.save(pdfEntity);
+            PdfEntity savedEntity;
+            try {
+                savedEntity = pdfRepository.save(pdfEntity);
+            } catch (Exception e) {
+                log.error("PDF bazaya yazılarkən xəta: {}", e.getMessage());
+                throw new IOException("PDF bazaya yazıla bilmədi", e);
+            }
 
-            // AI servisine asenkron olarak metin gönder
             analyzeTextAsync(savedEntity.getId(), extractedText);
 
             return savedEntity;
         } catch (IOException e) {
-            log.error("Failed to process PDF {}: {}", file.getOriginalFilename(), e.getMessage());
+            log.error("PDF işlənməsi uğursuz oldu {}: {}", file.getOriginalFilename(), e.getMessage());
             throw e;
         }
     }
 
-    // PDF'den tabloları Tesseract ile çıkaran metod
     private String extractTablesWithTesseract(PDDocument document) throws IOException {
         StringBuilder tableContent = new StringBuilder();
         PDFRenderer pdfRenderer = new PDFRenderer(document);
+        boolean tableStarted = false;
+        StringBuilder currentRow = new StringBuilder();
 
-        // Tek thread ile işleme (çökme riskini azaltmak için)
         for (int page = 0; page < document.getNumberOfPages(); page++) {
             try {
                 BufferedImage image = pdfRenderer.renderImageWithDPI(page, 300, ImageType.RGB);
                 if (image == null) {
-                    log.warn("Failed to render image for page {} in file {}", page, document.getDocumentInformation().getTitle());
+                    log.warn("{} səhifəsi üçün şəkil yaradıla bilmədi", page);
                     continue;
                 }
                 BufferedImage enhancedImage = imageProcessor.enhanceImage(image);
                 String text = extractWithTesseract(enhancedImage);
-                if (isTableContent(text)) {
-                    tableContent.append(text).append("\n");
+                log.info("Tesseract xam çıxışı {} səhifəsi üçün: {}", page, text);
+                String[] lines = text.split("\n");
+
+                for (int i = 0; i < lines.length; i++) {
+                    String line = lines[i].trim();
+
+                    // Cədvəlin başlanğıcını tap
+                    if (line.contains("Tarix Təyinat Məbləğ Komissiya ƏDV Balans")) {
+                        tableStarted = true;
+                        continue;
+                    }
+
+                    // Cədvəl başladıqdan sonra sətirləri birləşdir
+                    if (tableStarted) {
+                        if (line.matches("\\d{2}-\\d{2}-\\d{4}")) { // Tarix sətri
+                            if (currentRow.length() > 0) {
+                                tableContent.append(currentRow.toString()).append("\n");
+                                currentRow.setLength(0); // Yeni sətrə keç
+                            }
+                            currentRow.append(line);
+                        } else if (currentRow.length() > 0 && !line.isEmpty()) { // Tarixdən sonrakı sətirlər
+                            currentRow.append(" ").append(line);
+                        }
+
+                        // Cədvəlin sonunu tap
+                        if (line.contains("180.95")) {
+                            tableContent.append(currentRow.toString()).append("\n");
+                            tableStarted = false;
+                            break;
+                        }
+                    }
                 }
             } catch (TesseractException e) {
-                log.error("Tesseract OCR failed for page {}: {}", page, e.getMessage());
-            } catch (Exception e) {
-                log.error("Unexpected error processing page {}: {}", page, e.getMessage());
+                log.error("Tesseract OCR {} səhifəsi üçün uğursuz oldu: {}", page, e.getMessage());
             }
         }
 
-        return tableContent.toString();
+        String result = tableContent.toString().trim();
+        log.info("Tesseract son çıxarılmış cədvəl: {}", result);
+        return result.isEmpty() ? "" : result;
     }
 
-    // Basit tablo içeriği kontrolü
     private boolean isTableContent(String content) {
-        return content != null && (content.contains("|") || content.contains("\t") || content.lines().count() > 1);
+        if (content == null || content.trim().isEmpty()) {
+            return false;
+        }
+
+        String[] lines = content.split("\n");
+        if (lines.length < 2) {
+            return false;
+        }
+
+        int tableLikeLines = 0;
+        for (String line : lines) {
+            if (line.matches(".*\\d{2}[.-]\\d{2}[.-]\\d{4}.*") && // Tarix formatı
+                    line.matches(".*[-+]?\\d+\\.\\d{2}.*")) {         // Rəqəm formatı
+                tableLikeLines++;
+            }
+        }
+
+        return tableLikeLines >= 2; // Ən azı 2 məlumat sətri olmalı
     }
 
-    // Tesseract ile OCR yapma
+    // Tesseract ilə OCR
     public String extractWithTesseract(BufferedImage tableImage) throws TesseractException {
         if (tableImage == null) {
-            log.error("Tesseract received null image");
+            log.error("Tesseract null şəkil aldı");
             return "";
         }
         try {
             return tesseract.doOCR(tableImage);
         } catch (TesseractException e) {
-            log.error("Tesseract OCR failed: {}", e.getMessage());
+            log.error("Tesseract OCR uğursuz oldu: {}", e.getMessage());
             throw e;
         }
     }
 
-    // MinIO'ya dosya yükleme yardımcı metodu
+    // MinIO-ya fayl yükləmə köməkçi metodu
     public String saveToMinIO(MultipartFile file) throws IOException {
-        return minIOService.uploadFile(file);
+        try {
+            return minIOService.uploadFile(file);
+        } catch (IOException e) {
+            log.error("MinIO-ya fayl yükləmə uğursuz oldu: {}", e.getMessage());
+            throw e;
+        }
     }
 
-    // PdfEntity'yi ID ile alma
+    // PdfEntity-ni ID ilə alma
     public PdfEntity getPdfEntityById(Long id) {
-        return pdfRepository.findById(id).orElse(null);
+        try {
+            return pdfRepository.findById(id).orElse(null);
+        } catch (Exception e) {
+            log.error("ID ilə PdfEntity alınarkən xəta: {}", e.getMessage());
+            return null;
+        }
     }
 
-    // MinIO'dan dosyayı indirme
+    // MinIO-dan faylı endirmə
     public byte[] downloadFromMinIO(String minioPath) throws IOException {
-        return minIOService.downloadFile(minioPath);
+        try {
+            return minIOService.downloadFile(minioPath);
+        } catch (IOException e) {
+            log.error("MinIO-dan fayl endirilməsi uğursuz oldu: {}", e.getMessage());
+            throw e;
+        }
     }
 
-    // PDFBox ile tablo çıkarma
     private String extractTablesWithPDFBox(PDDocument document) throws IOException {
         PDFTextStripper stripper = new PDFTextStripper();
         StringBuilder tableContent = new StringBuilder();
-        for (int page = 1; page <= document.getNumberOfPages(); page++) {
-            stripper.setStartPage(page);
-            stripper.setEndPage(page);
-            try {
+        boolean tableStarted = false;
+        StringBuilder currentRow = new StringBuilder();
+        int nonTableLinesCount = 0;
+        boolean headerFound = false;
+
+        try {
+            for (int page = 1; page <= document.getNumberOfPages(); page++) {
+                stripper.setStartPage(page);
+                stripper.setEndPage(page);
                 String text = stripper.getText(document);
-                if (isTableContent(text)) {
-                    tableContent.append(text).append("\n");
+                log.info("PDFBox xam çıxışı {} səhifəsi üçün: {}", page, text);
+                String[] lines = text.split("\n");
+
+                for (int i = 0; i < lines.length; i++) {
+                    String line = lines[i].trim();
+
+                    // Cədvəl başlığını tapmaq
+                    if (!headerFound && isPotentialTableHeader(line)) {
+                        headerFound = true;
+                        continue; // Başlığı əlavə etmirik, yalnız məlumat sətirlərini toplayırıq
+                    }
+
+                    // Cədvəlin başlanğıcını dinamik tapmaq
+                    if (headerFound && !tableStarted) {
+                        if (line.matches("\\d{2}[.-]\\d{2}[.-]\\d{4}.*") &&
+                                (line.contains(".") || line.contains("-") || line.matches(".*\\d+\\.\\d{2}.*"))) {
+                            tableStarted = true;
+                            currentRow.append(line);
+                            nonTableLinesCount = 0;
+                        }
+                        continue;
+                    }
+
+                    // Cədvəl başladıqdan sonra
+                    if (tableStarted) {
+                        // Tarix ilə başlayan yeni sətir
+                        if (line.matches("\\d{2}[.-]\\d{2}[.-]\\d{4}.*")) {
+                            if (currentRow.length() > 0) {
+                                tableContent.append(currentRow.toString()).append("\n");
+                                currentRow.setLength(0);
+                            }
+                            currentRow.append(line);
+                            nonTableLinesCount = 0;
+                        }
+                        // Cədvələ aid ola biləcək digər sətirlər
+                        else if (!line.isEmpty() &&
+                                !line.contains("Page") &&
+                                !line.contains("VÖEN") &&
+                                !line.contains("tel:") &&
+                                !line.contains("www.") &&
+                                !line.contains("Bank") &&
+                                !line.matches(".*[A-Z]{2}\\d{2}[A-Z]{4}\\d+.*")) { // IBAN filtiri
+                            if (currentRow.length() > 0) {
+                                currentRow.append(" ").append(line);
+                            }
+                            nonTableLinesCount = 0;
+                        }
+                        // Cədvələ aid olmayan sətirlər
+                        else if (!line.isEmpty()) {
+                            nonTableLinesCount++;
+                            if (nonTableLinesCount >= 2) { // 2 ardıcıl cədvələ aid olmayan sətir
+                                if (currentRow.length() > 0) {
+                                    tableContent.append(currentRow.toString()).append("\n");
+                                }
+                                tableStarted = false;
+                                headerFound = false; // Yeni cədvəl üçün başlıq axtarışını sıfırla
+                                currentRow.setLength(0);
+                                nonTableLinesCount = 0;
+                            }
+                        }
+                    }
                 }
-            } catch (Exception e) {
-                log.warn("Failed to extract text from page {}: {}", page, e.getMessage());
+            }
+
+            // Sonuncu sətri əlavə et
+            if (currentRow.length() > 0) {
+                tableContent.append(currentRow.toString()).append("\n");
+            }
+
+            String result = tableContent.toString().trim();
+            log.info("PDFBox son çıxarılmış cədvəl: {}", result);
+            return result.isEmpty() ? "" : result;
+        } catch (Exception e) {
+            log.error("PDFBox ilə cədvəl çıxarılmasında xəta: {}", e.getMessage());
+            throw new IOException("PDFBox ilə cədvəl çıxarılmadı", e);
+        }
+    }
+
+    // Potensial cədvəl başlığını yoxlamaq üçün köməkçi metod
+    private boolean isPotentialTableHeader(String line) {
+        String[] words = line.split("\\s+");
+        int tableKeywordsCount = 0;
+        String[] tableKeywords = {"Tarix", "Əməliyyat", "Məbləğ", "Mədaxil", "Məxaric",
+                "Balans", "Təyinat", "Kart", "Komissiya", "ƏDV"};
+
+        for (String word : words) {
+            for (String keyword : tableKeywords) {
+                if (word.equalsIgnoreCase(keyword) || word.contains(keyword)) {
+                    tableKeywordsCount++;
+                    break;
+                }
             }
         }
-        return tableContent.toString();
+
+        return tableKeywordsCount >= 2; // Ən azı 2 sütun adına bənzər söz
     }
 
-    // Dosya adına göre PDF'leri listeleme
+    // Fayl adına görə PDF-ləri siyahıya alma
     public List<PdfEntity> getPdfsByFileName(String fileName) {
-        return pdfRepository.findByFileName(fileName);
+        try {
+            return pdfRepository.findByFileName(fileName);
+        } catch (Exception e) {
+            log.error("Fayl adına görə PDF-lər siyahıya alınarkən xəta: {}", e.getMessage());
+            return List.of();
+        }
     }
 
-    // ExtractedText'e göre PDF bulma
+    // Çıxarılmış mətnə görə PDF tapma
     public PdfEntity getPdfByExtractedText(String extractedText) {
-        return pdfRepository.findByExtractedText(extractedText);
+        try {
+            return pdfRepository.findByExtractedText(extractedText);
+        } catch (Exception e) {
+            log.error("Çıxarılmış mətnə görə PDF tapılarkən xəta: {}", e.getMessage());
+            return null;
+        }
     }
 
-    // Tüm PDF'leri listeleme
+    // Bütün PDF-ləri siyahıya alma
     public List<PdfEntity> getAllPdfs() {
-        return pdfRepository.findAll();
+        try {
+            return pdfRepository.findAll();
+        } catch (Exception e) {
+            log.error("Bütün PDF-lər siyahıya alınarkən xəta: {}", e.getMessage());
+            return List.of();
+        }
     }
 
     public void analyzeTextAsync(Long pdfId, String extractedText) {
         CompletableFuture.supplyAsync(() -> {
-            AIAnalysisRequest request = new AIAnalysisRequest(
-                    pdfId.toString(),
-                    extractedText,
-                    "METADATA_COMPLETION"
-            );
+            try {
+                AIAnalysisRequest request = new AIAnalysisRequest(
+                        pdfId.toString(),
+                        extractedText,
+                        "METADATA_COMPLETION"
+                );
 
-            AIAnalysisResponse response = aiServiceClient.analyzeText(request);
+                AIAnalysisResponse response = aiServiceClient.analyzeText(request);
 
-            if (response.isSuccess() && response.getExtractedMetadata() != null) {
-                Optional<PdfEntity> optionalPdf = pdfRepository.findById(pdfId);
-                optionalPdf.ifPresent(pdf -> {
-                    pdf.setMetadata(convertMetadataToJsonString(response.getExtractedMetadata()));
-                    pdfRepository.save(pdf);
-                    log.info("PDF metadata updated for ID: {}", pdfId);
-                });
-            } else {
-                log.warn("AI analysis failed for PDF ID: {}", pdfId);
+                if (response.isSuccess() && response.getExtractedMetadata() != null) {
+                    Optional<PdfEntity> optionalPdf = pdfRepository.findById(pdfId);
+                    optionalPdf.ifPresent(pdf -> {
+                        pdf.setMetadata(convertMetadataToJsonString(response.getExtractedMetadata()));
+                        pdfRepository.save(pdf);
+                        log.info("PDF metadata ID üçün yeniləndi: {}", pdfId);
+                    });
+                } else {
+                    log.warn("AI təhlili PDF ID üçün uğursuz oldu: {}", pdfId);
+                }
+
+                return response;
+            } catch (Exception e) {
+                log.error("AI təhlilində xəta: {}", e.getMessage());
+                return null;
             }
-
-            return response;
         }).exceptionally(ex -> {
-            log.error("AI service failed: {}", ex.getMessage());
+            log.error("AI xidməti uğursuz oldu: {}", ex.getMessage());
             return null;
         });
     }
 
-    // Metadata'yı JSON string'ine çevirme yardımcı metodu
+    // Metadata-nı JSON string-ə çevirmə köməkçi metodu
     private String convertMetadataToJsonString(Map<String, Object> metadata) {
         try {
             return new ObjectMapper().writeValueAsString(metadata);
         } catch (JsonProcessingException e) {
-            log.error("Error converting metadata to JSON", e);
+            log.error("Metadata JSON-a çevrilərkən xəta", e);
             return "{}";
         }
     }

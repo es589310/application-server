@@ -15,9 +15,8 @@ public class TesseractsConfig {
     public Tesseract tesseract() {
         Tesseract tesseract = new Tesseract();
         tesseract.setDatapath(tessdataPath);
-        // Birden fazla dil için virgülle ayrılmış liste kullanın
-        tesseract.setLanguage("eng+aze+aze_cyrl+rus"); // İngilizce, Azerice ve Rusça desteklenir
-        tesseract.setPageSegMode(6); // Tablo çıkarımı için uygun mod
+        tesseract.setLanguage("eng+aze+aze_cyrl+rus");
+        tesseract.setPageSegMode(6);
         return tesseract;
     }
 }

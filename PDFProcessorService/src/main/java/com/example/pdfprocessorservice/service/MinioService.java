@@ -22,10 +22,10 @@ public class MinioService {
     @Value("${minio.bucket-name}")
     private String bucketName;
 
-    // Dosya yükleme metodu
+    // Fayl yükləmə metodu
     public String uploadFile(MultipartFile file) throws IOException {
         try {
-            // Bucket kontrolü
+            // Bucket yoxlaması
             boolean bucketExists = minioClient.bucketExists(
                     io.minio.BucketExistsArgs.builder().bucket(bucketName).build());
             if (!bucketExists) {
@@ -33,10 +33,10 @@ public class MinioService {
                         io.minio.MakeBucketArgs.builder().bucket(bucketName).build());
             }
 
-            // Benzersiz dosya adı oluştur
+            // Unikal fayl adı yaradılır
             String uniqueFileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
 
-            // MultipartFile'dan InputStream alıyoruz
+            // MultipartFile-dan InputStream alınır
             try (InputStream fileStream = file.getInputStream()) {
                 minioClient.putObject(
                         io.minio.PutObjectArgs.builder()
@@ -46,17 +46,17 @@ public class MinioService {
                                 .build());
             }
 
-            // Veritabanında sadece dosya adını saklayacağız
+            // Verilənlər bazasında yalnız fayl adını saxlayacağıq
             return uniqueFileName;
         } catch (MinioException | InvalidKeyException | NoSuchAlgorithmException e) {
-            throw new IOException("MinIO upload failed: " + e.getMessage(), e);
+            throw new IOException("MinIO yükləməsi uğursuz oldu: " + e.getMessage(), e);
         }
     }
 
-    // Dosya indirme metodu
+    // Fayl endirmə metodu
     public byte[] downloadFile(String objectName) throws IOException {
         try {
-            // MinIO'dan dosyayı al ve kaynakları temizle
+            // MinIO-dan faylı al və resursları təmizlə
             try (InputStream stream = minioClient.getObject(
                     io.minio.GetObjectArgs.builder()
                             .bucket(bucketName)
@@ -65,7 +65,7 @@ public class MinioService {
                 return stream.readAllBytes();
             }
         } catch (MinioException | InvalidKeyException | NoSuchAlgorithmException e) {
-            throw new IOException("Failed to download file from MinIO: " + e.getMessage(), e);
+            throw new IOException("MinIO-dan fayl endirilməsi uğursuz oldu: " + e.getMessage(), e);
         }
     }
 }
