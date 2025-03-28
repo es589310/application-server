@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/ai")
 @RequiredArgsConstructor
 public class AiController {
+
     private final AiService aiService;
 
     @PostMapping("/process")
@@ -19,25 +20,4 @@ public class AiController {
     }
 
 
-
-    /*@GetMapping("/latest/{pdfId}")
-    public Mono<ResponseEntity<AiResponse>> getLatestAnalysis(@PathVariable String pdfId) {
-        return aiService.getLatestAnalysisByDocumentId(pdfId)
-                .map(response -> response != null
-                        ? ResponseEntity.ok(response)
-                        : ResponseEntity.notFound().build());
-    }
-
-    @GetMapping("/by-document/{documentId}")
-    public Mono<ResponseEntity<List<AiResponse>>> getAnalysesByDocumentId(@PathVariable String documentId) {
-        return aiService.findAnalysesByDocumentId(documentId)
-                .map(ResponseEntity::ok);
-    }
-
-    @GetMapping("/successful")
-    public Mono<ResponseEntity<List<AiResponse>>> getSuccessfulAnalyses() {
-        return aiService.findSuccessfulAnalyses()
-                .map(ResponseEntity::ok);
-    }
-*/
 }
