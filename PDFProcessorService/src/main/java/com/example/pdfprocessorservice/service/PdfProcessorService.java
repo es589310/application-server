@@ -114,6 +114,8 @@ public class PdfProcessorService {
         }
     }
 
+
+
     private String extractTablesWithTesseract(PDDocument document) throws IOException {
         StringBuilder tableContent = new StringBuilder();
         PDFRenderer pdfRenderer = new PDFRenderer(document);
@@ -171,6 +173,8 @@ public class PdfProcessorService {
         return result.isEmpty() ? "" : result;
     }
 
+
+
     private boolean isTableContent(String content) {
         if (content == null || content.trim().isEmpty()) {
             return false;
@@ -192,6 +196,8 @@ public class PdfProcessorService {
         return tableLikeLines >= 2; // Ən azı 2 məlumat sətri olmalı
     }
 
+
+
     // Tesseract ilə OCR
     public String extractWithTesseract(BufferedImage tableImage) throws TesseractException {
         if (tableImage == null) {
@@ -206,6 +212,8 @@ public class PdfProcessorService {
         }
     }
 
+
+
     // MinIO-ya fayl yükləmə köməkçi metodu
     public String saveToMinIO(MultipartFile file) throws IOException {
         try {
@@ -215,6 +223,8 @@ public class PdfProcessorService {
             throw e;
         }
     }
+
+
 
     // PdfEntity-ni ID ilə alma
     public PdfEntity getPdfEntityById(Long id) {
@@ -226,6 +236,8 @@ public class PdfProcessorService {
         }
     }
 
+
+
     // MinIO-dan faylı endirmə
     public byte[] downloadFromMinIO(String minioPath) throws IOException {
         try {
@@ -235,6 +247,8 @@ public class PdfProcessorService {
             throw e;
         }
     }
+
+
 
     private String extractTablesWithPDFBox(PDDocument document) throws IOException {
         PDFTextStripper stripper = new PDFTextStripper();
@@ -327,6 +341,8 @@ public class PdfProcessorService {
         }
     }
 
+
+
     // Potensial cədvəl başlığını yoxlamaq üçün köməkçi metod
     private boolean isPotentialTableHeader(String line) {
         String[] words = line.split("\\s+");
@@ -346,6 +362,8 @@ public class PdfProcessorService {
         return tableKeywordsCount >= 2; // Ən azı 2 sütun adına bənzər söz
     }
 
+
+
     // Fayl adına görə PDF-ləri siyahıya alma
     public List<PdfEntity> getPdfsByFileName(String fileName) {
         try {
@@ -355,6 +373,8 @@ public class PdfProcessorService {
             return List.of();
         }
     }
+
+
 
     // Çıxarılmış mətnə görə PDF tapma
     public PdfEntity getPdfByExtractedText(String extractedText) {
@@ -366,6 +386,8 @@ public class PdfProcessorService {
         }
     }
 
+
+
     // Bütün PDF-ləri siyahıya alma
     public List<PdfEntity> getAllPdfs() {
         try {
@@ -375,6 +397,8 @@ public class PdfProcessorService {
             return List.of();
         }
     }
+
+
 
     public void analyzeTextAsync(Long pdfId, String extractedText) {
         CompletableFuture.supplyAsync(() -> {
@@ -387,7 +411,7 @@ public class PdfProcessorService {
 
                 AIAnalysisResponse response = aiServiceClient.analyzeText(request);
 
-                if (response.isSuccess() && response.getExtractedMetadata() != null) {
+                if (response != null && response.isSuccess() && response.getExtractedMetadata() != null) {
                     Optional<PdfEntity> optionalPdf = pdfRepository.findById(pdfId);
                     optionalPdf.ifPresent(pdf -> {
                         pdf.setMetadata(convertMetadataToJsonString(response.getExtractedMetadata()));
@@ -408,6 +432,7 @@ public class PdfProcessorService {
             return null;
         });
     }
+
 
     // Metadata-nı JSON string-ə çevirmə köməkçi metodu
     private String convertMetadataToJsonString(Map<String, Object> metadata) {

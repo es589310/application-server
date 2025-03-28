@@ -31,6 +31,7 @@ public class MinioService {
             if (!bucketExists) {
                 minioClient.makeBucket(
                         io.minio.MakeBucketArgs.builder().bucket(bucketName).build());
+                return "Bucket again created";
             }
 
             // Unikal fayl adı yaradılır
