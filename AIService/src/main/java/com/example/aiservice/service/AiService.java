@@ -26,35 +26,35 @@ public class AiService {
 
     private final PdfProcessorClient pdfProcessorClient;
     private final AiProcessor aiProcessor;
-    private final AiRequestRepository aiRequestRepository; // AiRequest için
-    private final AiResponseRepository aiResponseRepository; // AiResponse için
+    private final AiRequestRepository aiRequestRepository; // AiRequest üçün
+    private final AiResponseRepository aiResponseRepository; // AiResponse üçün
 
     @Transactional(propagation = REQUIRED)
     public AIAnalysisResponse analyzeText(AIAnalysisRequest request) {
-        log.info("Metin analizi başlatıldı: pdfId={}, analysisType={}", request.getPdfId(), request.getAnalysisType());
+        log.info("Mətn təhlili başlayır: pdfId={}, analysisType={}", request.getPdfId(), request.getAnalysisType());
 
         try {
             AiRequest aiRequest = AiRequest.builder()
-                    .pdfId(request.getPdfId())
+                    .pdfId(String.valueOf(request.getPdfId()))
                     .extractedText(request.getExtractedText())
                     .analysisType(request.getAnalysisType())
                     .requestDate(LocalDateTime.now())
                     .build();
-            aiRequest = aiRequestRepository.save(aiRequest); // AiRequest’i kaydet
+            aiRequest = aiRequestRepository.save(aiRequest); // AiRequest-i saxla
 
             String textToAnalyze = request.getExtractedText();
             if (textToAnalyze == null || textToAnalyze.trim().isEmpty()) {
-                log.info("Extracted text boş, PDF içeriği pdfId={} ile çekiliyor", request.getPdfId());
-                textToAnalyze = pdfProcessorClient.getPdfContent(request.getPdfId());
+                log.info("Çıxarılmış mətn boşdur, PDF məzmunu pdfId={} ilə alınır", request.getPdfId());
+                textToAnalyze = pdfProcessorClient.getPdfContent(String.valueOf(request.getPdfId()));
                 if (textToAnalyze == null) {
                     AiResponse errorResponse = AiResponse.builder()
                             .request(aiRequest)
                             .success(false)
-                            .message("PDF içeriği alınamadı")
+                            .message("PDF məzmunu alınmadı")
                             .createdAt(LocalDateTime.now())
                             .build();
                     aiResponseRepository.save(errorResponse);
-                    return new AIAnalysisResponse(false, null, "PDF içeriği alınamadı");
+                    return new AIAnalysisResponse(false, null, "PDF məzmunu alınmadı");
                 }
                 aiRequest.setExtractedText(textToAnalyze);
                 aiRequest = aiRequestRepository.save(aiRequest);
@@ -65,7 +65,7 @@ public class AiService {
             if (aiResponse == null || !aiResponse.isSuccess()) {
                 aiResponse = AiResponse.builder()
                         .success(false)
-                        .message("AI analizi başarısız")
+                        .message("AI təhlili uğursuz oldu")
                         .createdAt(LocalDateTime.now())
                         .build();
             }
@@ -80,9 +80,9 @@ public class AiService {
 
             return new AIAnalysisResponse(aiResponse.isSuccess(), metadata, aiResponse.getMessage());
         } catch (Exception e) {
-            log.error("Metin analizi sırasında hata: {}", e.getMessage());
+            log.error("Mətn təhlili zamanı xəta: {}", e.getMessage());
             AiRequest errorRequest = AiRequest.builder()
-                    .pdfId(request.getPdfId())
+                    .pdfId(String.valueOf(request.getPdfId()))
                     .extractedText(request.getExtractedText())
                     .analysisType(request.getAnalysisType())
                     .requestDate(LocalDateTime.now())
@@ -91,11 +91,12 @@ public class AiService {
             AiResponse errorResponse = AiResponse.builder()
                     .request(errorRequest)
                     .success(false)
-                    .message("Analiz başarısız: " + e.getMessage())
+                    .message("Təhlil uğursuz oldu: " + e.getMessage())
                     .createdAt(LocalDateTime.now())
                     .build();
             aiResponseRepository.save(errorResponse);
-            return new AIAnalysisResponse(false, null, "Analiz başarısız: " + e.getMessage());
+            return new AIAnalysisResponse(false, null, "Təhlil uğursuz oldu: " + e.getMessage());
         }
     }
+
 }

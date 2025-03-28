@@ -6,8 +6,10 @@ import lombok.*;
 @AllArgsConstructor
 @Getter
 @Setter
+@Builder
 public class AIAnalysisRequest {
-    private String pdfId;
+    private Long pdfId;
     private String extractedText;
     private String analysisType;
+    private String model;
 }
