@@ -1,7 +1,7 @@
 package com.example.aiservice.client;
 
-import com.example.aiservice.dto.OpenAIRequest;
-import com.example.aiservice.dto.OpenAIResponse;
+import com.example.aiservice.dto.AIAnalysisRequest;
+import com.example.aiservice.dto.AIAnalysisResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -24,7 +24,7 @@ public class OpenAIClient {
                 .build();
     }
 
-    public Mono<OpenAIResponse> generateText(OpenAIRequest request) {
+    public Mono<AIAnalysisResponse> generateText(AIAnalysisRequest request) {
         return webClient.post()
                 .uri("/completions")
                 .bodyValue(request)
@@ -34,6 +34,6 @@ public class OpenAIClient {
                         clientResponse -> clientResponse.bodyToMono(String.class)
                                 .flatMap(errorBody -> Mono.error(new RuntimeException("OpenAI API Error: " + errorBody)))
                 )
-                .bodyToMono(OpenAIResponse.class);
+                .bodyToMono(AIAnalysisResponse.class);
     }
 }

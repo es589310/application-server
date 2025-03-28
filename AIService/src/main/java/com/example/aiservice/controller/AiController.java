@@ -1,14 +1,11 @@
 package com.example.aiservice.controller;
 
-import com.example.aiservice.entity.AiRequest;
-import com.example.aiservice.entity.AiResponse;
+import com.example.aiservice.dto.AIAnalysisRequest;
+import com.example.aiservice.dto.AIAnalysisResponse;
 import com.example.aiservice.service.AiService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import reactor.core.publisher.Mono;
 
-import java.util.List;
 
 @RestController
 @RequestMapping("/ai")
@@ -17,12 +14,13 @@ public class AiController {
     private final AiService aiService;
 
     @PostMapping("/process")
-    public Mono<ResponseEntity<AiResponse>> processAiAnalysis(@RequestBody AiRequest request) {
-        return aiService.processAiAnalysis(request)
-                .map(ResponseEntity::ok);
+    public AIAnalysisResponse processText(@RequestBody AIAnalysisRequest request) {
+        return aiService.analyzeText(request);
     }
 
-    @GetMapping("/latest/{pdfId}")
+
+
+    /*@GetMapping("/latest/{pdfId}")
     public Mono<ResponseEntity<AiResponse>> getLatestAnalysis(@PathVariable String pdfId) {
         return aiService.getLatestAnalysisByDocumentId(pdfId)
                 .map(response -> response != null
@@ -41,4 +39,5 @@ public class AiController {
         return aiService.findSuccessfulAnalyses()
                 .map(ResponseEntity::ok);
     }
+*/
 }

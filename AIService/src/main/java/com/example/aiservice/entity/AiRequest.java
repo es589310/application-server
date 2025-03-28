@@ -1,14 +1,31 @@
 package com.example.aiservice.entity;
 
+import jakarta.persistence.*;
 import lombok.*;
 
-import java.io.Serializable;
+import java.time.LocalDateTime;
 
-@Data
-@AllArgsConstructor
+@Entity
+@Table(name = "ai_requests")
+@Getter
+@Setter
 @NoArgsConstructor
-public class AiRequest implements Serializable {
+@AllArgsConstructor
+@Builder
+public class AiRequest {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false)
     private String pdfId;
-    private String content;
+
+    @Column(columnDefinition = "TEXT")
+    private String extractedText;
+
+    @Column(nullable = false)
     private String analysisType;
+
+    @Column(nullable = false)
+    private LocalDateTime requestDate;
 }

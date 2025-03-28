@@ -1,31 +1,35 @@
 package com.example.aiservice.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import lombok.Data;
+import jakarta.persistence.*;
+import lombok.*;
 
-import java.io.Serializable;
 import java.time.LocalDateTime;
 
-@Data
 @Entity
-@Table(name = "ai_table")
-public class AiResponse implements Serializable {
+@Table(name = "ai_responses")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class AiResponse {
     @Id
-    private String pdfId;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @OneToOne
+    @JoinColumn(name = "request_id", nullable = false)
+    private AiRequest request;
 
     @Column(columnDefinition = "TEXT")
     private String analysisResult;
 
+    @Column(nullable = false)
     private boolean success;
 
-    @Column(updatable = false)
-    private LocalDateTime createdAt;
+    @Column(columnDefinition = "TEXT")
+    private String message;
 
-    // Constructor
-    public AiResponse() {
-        this.createdAt = LocalDateTime.now();
-    }
+    @Column(nullable = false)
+    private LocalDateTime createdAt;
 }
