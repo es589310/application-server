@@ -1,250 +1,446 @@
 package com.example.pdfprocessorservice.service;
 
 import com.example.pdfprocessorservice.client.AIClient;
+import com.example.pdfprocessorservice.dto.AIAnalysisRequest;
+import com.example.pdfprocessorservice.dto.AIAnalysisResponse;
 import com.example.pdfprocessorservice.entity.PdfEntity;
-import com.example.pdfprocessorservice.entity.ReportEntity;
-import com.example.pdfprocessorservice.exception.AiServiceException;
-import com.example.pdfprocessorservice.exception.FileUploadException;
-import com.example.pdfprocessorservice.exception.PdfProcessingException;
 import com.example.pdfprocessorservice.repository.PdfRepository;
-import com.example.pdfprocessorservice.repository.ReportRepository;
-import feign.FeignException;
+import com.example.pdfprocessorservice.util.ImageProcessor;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import net.sourceforge.tess4j.ITesseract;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
+import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import javax.annotation.PostConstruct;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.*;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class PdfProcessorService {
 
+    private final MinioService minIOService;
     private final PdfRepository pdfRepository;
-    private final ReportRepository reportRepository;
-    private final AIClient aiClient;
-    private final GoogleCloudStorageService googleCloudStorageService;
-    private final DatabaseMigrationService databaseMigrationService;
+    private final AIClient aiServiceClient;
+    private final Tesseract tesseract;
+    private final ImageProcessor imageProcessor;
 
-    @PostConstruct
-    public void init(){
-        log.info("Starting database schema update...");
-        databaseMigrationService.updateContentColumnType();
-        log.info("Database schema update completed.");
-    }
+    public PdfEntity processPdf(MultipartFile file) throws IOException {
+        log.info("PDF işlənir: {}", file.getOriginalFilename());
+        try (InputStream inputStream = file.getInputStream();
+             PDDocument document = Loader.loadPDF(inputStream.readAllBytes())) {
 
-    public void processPdf(MultipartFile file,String language) {
-        try (InputStream fileStream = file.getInputStream()){
-
-            String extractedText = extractTextFromPdf(fileStream);
-            if (extractedText.isEmpty()) {
-                extractedText = extractTextWithOCR(fileStream,language);
+            if (document.getNumberOfPages() == 0) {
+                log.warn("Yanlış PDF: {} faylında səhifə tapılmadı", file.getOriginalFilename());
+                throw new IOException("Yanlış PDF: Səhifə tapılmadı");
             }
-            log.info("Extracted text length: {}", extractedText.length());
 
-            List<String[]> tableData = extractTableData(extractedText);
-            log.info("Extracted table data: {} rows", tableData.size());
-            log.info("Extracted text: {}", extractedText);
+            String extractedText;
+            try {
+                extractedText = extractTablesWithTesseract(document);
+            } catch (Exception e) {
+                log.error("Tesseract ilə cədvəl çıxarılmasında xəta: {}", e.getMessage());
+                extractedText = "";
+            }
 
-            PdfEntity pdfEntity = pdfRepository.findByContent(extractedText);
-            if (pdfEntity == null) {
-                pdfEntity = new PdfEntity();
-                pdfEntity.setFileName(file.getOriginalFilename());
-                pdfEntity.setContent(extractedText);
-                pdfEntity.setUploadDate(LocalDateTime.now());
-                pdfRepository.save(pdfEntity);
-                log.info("PDF entity saved with ID: {}", pdfEntity.getId());
-
-                String localAnalysisResult = analyzePdfLocally(extractedText);
-                pdfEntity.setContent(localAnalysisResult);
-                pdfRepository.save(pdfEntity);
-
-                if (localAnalysisResult.isEmpty()) {
-                    String aiResult = aiClient.analyzeText(extractedText);
-                    log.info("AI analysis result: {}", aiResult);
-
-                    ReportEntity reportEntity = new ReportEntity();
-                    reportEntity.setPdfEntity(pdfEntity);
-                    reportEntity.setAnalysisResult(aiResult);
-                    reportRepository.save(reportEntity);
-                    log.info("Report entity saved with ID: {}", reportEntity.getId());
-                } else {
-                    log.info("No AI service needed, PDF analyzed locally.");
-                }
-
+            if (!isTableContent(extractedText)) {
+                log.warn("Tesseract düzgün cədvəl məzmunu çıxara bilmədi, PDFBox-a keçilir: {}", file.getOriginalFilename());
                 try {
-                    String uploadedFileLink = googleCloudStorageService.uploadFile(file);
-                    log.info("Uploaded file link: {}", uploadedFileLink);
+                    extractedText = extractTablesWithPDFBox(document);
                 } catch (Exception e) {
-                    log.error("Error uploading PDF to Google Cloud", e);
+                    log.error("PDFBox ilə cədvəl çıxarılmasında xəta: {}", e.getMessage());
+                    extractedText = "";
                 }
-
-                processTableData(tableData);
-            } else {
-                log.info("PDF content already exists in database with ID: {}", pdfEntity.getId());
+                if (!isTableContent(extractedText)) {
+                    log.warn("PDFBox da düzgün cədvəl məzmunu çıxara bilmədi: {}", file.getOriginalFilename());
+                }
             }
+
+            PdfEntity existingByText = pdfRepository.findByExtractedText(extractedText);
+            if (existingByText != null) {
+                log.info("Eyni çıxarılmış mətnə malik PDF artıq mövcuddur: {}", existingByText.getFileName());
+                return existingByText;
+            }
+
+            List<PdfEntity> existingByFileName = pdfRepository.findByFileName(file.getOriginalFilename());
+            if (!existingByFileName.isEmpty()) {
+                log.warn("Eyni fayl adına malik PDF artıq mövcuddur: {}", file.getOriginalFilename());
+            }
+
+            String filePath;
+            try {
+                filePath = saveToMinIO(file);
+            } catch (Exception e) {
+                log.error("MinIO-ya yükləmə xətası: {}", e.getMessage());
+                throw new IOException("MinIO-ya fayl yüklənmədi", e);
+            }
+
+            PdfEntity pdfEntity = PdfEntity.builder()
+                    .fileName(file.getOriginalFilename())
+                    .uploadDate(LocalDateTime.now())
+                    .extractedText(extractedText)
+                    .minioPath(filePath)
+                    .build();
+
+            PdfEntity savedEntity;
+            try {
+                savedEntity = pdfRepository.save(pdfEntity);
+            } catch (Exception e) {
+                log.error("PDF bazaya yazılarkən xəta: {}", e.getMessage());
+                throw new IOException("PDF bazaya yazıla bilmədi", e);
+            }
+
+            analyzeTextAsync(savedEntity.getId(), extractedText);
+
+            return savedEntity;
         } catch (IOException e) {
-            log.error("Failed to process PDF", e);
-            throw new PdfProcessingException("Failed to process PDF", e);
-        } catch (DataIntegrityViolationException e) {
-            log.error("Data integrity violation while saving PDF", e);
-            throw new FileUploadException("Data integrity violation while saving PDF", e);
-        } catch (FeignException e){
-            log.error("AI service error", e);
-            throw new AiServiceException("AI service error", e);
-        } catch (TesseractException e) {
-            throw new PdfProcessingException("Failed to process PDF", e);
+            log.error("PDF işlənməsi uğursuz oldu {}: {}", file.getOriginalFilename(), e.getMessage());
+            throw e;
         }
     }
 
-    private String extractTextFromPdf(InputStream pdfStream) throws IOException {
-        try (PDDocument document = PDDocument.load(pdfStream)) {
-            PDFTextStripper pdfStripper = new PDFTextStripper();
-            return pdfStripper.getText(document);
-        }catch (IOException e){
-            throw new PdfProcessingException("Failed to extract text from PDF", e);
-        }
-    }
 
-    public List<String[]> extractTableData(String text) {
-        List<String[]> tableData = new ArrayList<>();
-        String[] lines = text.split("\n");
-        int startIndex = -1;
-        List<String> possibleHeaders = new ArrayList<>();
 
-        // Dinamik başlıqlar üçün
-        for (int i = 0; i < lines.length; i++) {
-            String line = lines[i].trim();
+    private String extractTablesWithTesseract(PDDocument document) throws IOException {
+        StringBuilder tableContent = new StringBuilder();
+        PDFRenderer pdfRenderer = new PDFRenderer(document);
+        boolean tableStarted = false;
+        StringBuilder currentRow = new StringBuilder();
 
-            if (isPossibleHeader(line)) {
-                possibleHeaders.add(line);
-                startIndex = i + 1;
-                break;
-            }
-        }
-
-        //
-        if (startIndex != -1) {
-            for (int i = startIndex; i < lines.length; i++) {
-                String line = lines[i].trim();
-
-                if (line.isEmpty() || !isValidRow(line)) continue;
-
-                String[] columns = line.split("\\s{2,}");
-                if (columns.length >= 6) {
-                    tableData.add(columns);
+        for (int page = 0; page < document.getNumberOfPages(); page++) {
+            try {
+                BufferedImage image = pdfRenderer.renderImageWithDPI(page, 300, ImageType.RGB);
+                if (image == null) {
+                    log.warn("{} səhifəsi üçün şəkil yaradıla bilmədi", page);
+                    continue;
                 }
+                BufferedImage enhancedImage = imageProcessor.enhanceImage(image);
+                String text = extractWithTesseract(enhancedImage);
+                log.info("Tesseract xam çıxışı {} səhifəsi üçün: {}", page, text);
+                String[] lines = text.split("\n");
+
+                for (int i = 0; i < lines.length; i++) {
+                    String line = lines[i].trim();
+
+                    // Cədvəlin başlanğıcını tap
+                    if (line.contains("Tarix Təyinat Məbləğ Komissiya ƏDV Balans")) {
+                        tableStarted = true;
+                        continue;
+                    }
+
+                    // Cədvəl başladıqdan sonra sətirləri birləşdir
+                    if (tableStarted) {
+                        if (line.matches("\\d{2}-\\d{2}-\\d{4}")) { // Tarix sətri
+                            if (currentRow.length() > 0) {
+                                tableContent.append(currentRow.toString()).append("\n");
+                                currentRow.setLength(0); // Yeni sətrə keç
+                            }
+                            currentRow.append(line);
+                        } else if (currentRow.length() > 0 && !line.isEmpty()) { // Tarixdən sonrakı sətirlər
+                            currentRow.append(" ").append(line);
+                        }
+
+                        // Cədvəlin sonunu tap
+                        if (line.contains("180.95")) {
+                            tableContent.append(currentRow.toString()).append("\n");
+                            tableStarted = false;
+                            break;
+                        }
+                    }
+                }
+            } catch (TesseractException e) {
+                log.error("Tesseract OCR {} səhifəsi üçün uğursuz oldu: {}", page, e.getMessage());
             }
-        } else {
-            log.error("Table headers not found.");
         }
 
-        //
-        if (!possibleHeaders.isEmpty()) {
-            log.info("Found possible headers: {}", String.join(", ", possibleHeaders));
-        }
-
-        return tableData;
+        String result = tableContent.toString().trim();
+        log.info("Tesseract son çıxarılmış cədvəl: {}", result);
+        return result.isEmpty() ? "" : result;
     }
 
-    private boolean isPossibleHeader(String line) {
-        try {
-            String[] headerKeywords = {"Tarix", "Təyinat", "Məbləğ", "Komissiya", "ƏDV", "Balans"};
 
-            for (String keyword : headerKeywords) {
-                if (line.contains(keyword)) {
-                    return true;
-                }
-            }
+
+    private boolean isTableContent(String content) {
+        if (content == null || content.trim().isEmpty()) {
             return false;
-        }catch (Exception e){
-            throw new PdfProcessingException("Failed to parse PDF header", e);
+        }
+
+        String[] lines = content.split("\n");
+        if (lines.length < 2) {
+            return false;
+        }
+
+        int tableLikeLines = 0;
+        for (String line : lines) {
+            if (line.matches(".*\\d{2}[.-]\\d{2}[.-]\\d{4}.*") && // Tarix formatı
+                    line.matches(".*[-+]?\\d+\\.\\d{2}.*")) {         // Rəqəm formatı
+                tableLikeLines++;
+            }
+        }
+
+        return tableLikeLines >= 2; // Ən azı 2 məlumat sətri olmalı
+    }
+
+
+
+    // Tesseract ilə OCR
+    public String extractWithTesseract(BufferedImage tableImage) throws TesseractException {
+        if (tableImage == null) {
+            log.error("Tesseract null şəkil aldı");
+            return "";
+        }
+        try {
+            return tesseract.doOCR(tableImage);
+        } catch (TesseractException e) {
+            log.error("Tesseract OCR uğursuz oldu: {}", e.getMessage());
+            throw e;
         }
     }
 
-    private boolean isValidRow(String line) {
+
+
+    // MinIO-ya fayl yükləmə köməkçi metodu
+    public String saveToMinIO(MultipartFile file) throws IOException {
         try {
-            String[] columns = line.split("\\s{2,}"); // Sütunları ayırılır
-            return columns.length >= 6; //6 dan çox olmamalı
-        }catch (Exception e){
-            throw new PdfProcessingException("Failed to parse PDF row", e);
+            return minIOService.uploadFile(file);
+        } catch (IOException e) {
+            log.error("MinIO-ya fayl yükləmə uğursuz oldu: {}", e.getMessage());
+            throw e;
         }
     }
 
-    private String analyzePdfLocally(String extractedText) {
-        try {
-            String analysisResult = ""; // Local analiz için
 
-            String[] headerKeywords = {"Tarix", "Təyinat", "Məbləğ", "Komissiya", "ƏDV", "Balans"};
-            for (String keyword : headerKeywords) {
-                if (extractedText.contains(keyword)) {
-                    analysisResult += "Title found: " + keyword + "\n";
+
+    // PdfEntity-ni ID ilə alma
+    public PdfEntity getPdfEntityById(Long id) {
+        try {
+            return pdfRepository.findById(id).orElse(null);
+        } catch (Exception e) {
+            log.error("ID ilə PdfEntity alınarkən xəta: {}", e.getMessage());
+            return null;
+        }
+    }
+
+
+
+    // MinIO-dan faylı endirmə
+    public byte[] downloadFromMinIO(String minioPath) throws IOException {
+        try {
+            return minIOService.downloadFile(minioPath);
+        } catch (IOException e) {
+            log.error("MinIO-dan fayl endirilməsi uğursuz oldu: {}", e.getMessage());
+            throw e;
+        }
+    }
+
+
+
+    private String extractTablesWithPDFBox(PDDocument document) throws IOException {
+        PDFTextStripper stripper = new PDFTextStripper();
+        StringBuilder tableContent = new StringBuilder();
+        boolean tableStarted = false;
+        StringBuilder currentRow = new StringBuilder();
+        int nonTableLinesCount = 0;
+        boolean headerFound = false;
+
+        try {
+            for (int page = 1; page <= document.getNumberOfPages(); page++) {
+                stripper.setStartPage(page);
+                stripper.setEndPage(page);
+                String text = stripper.getText(document);
+                log.info("PDFBox xam çıxışı {} səhifəsi üçün: {}", page, text);
+                String[] lines = text.split("\n");
+
+                for (int i = 0; i < lines.length; i++) {
+                    String line = lines[i].trim();
+
+                    // Cədvəl başlığını tapmaq
+                    if (!headerFound && isPotentialTableHeader(line)) {
+                        headerFound = true;
+                        continue; // Başlığı əlavə etmirik, yalnız məlumat sətirlərini toplayırıq
+                    }
+
+                    // Cədvəlin başlanğıcını dinamik tapmaq
+                    if (headerFound && !tableStarted) {
+                        if (line.matches("\\d{2}[.-]\\d{2}[.-]\\d{4}.*") &&
+                                (line.contains(".") || line.contains("-") || line.matches(".*\\d+\\.\\d{2}.*"))) {
+                            tableStarted = true;
+                            currentRow.append(line);
+                            nonTableLinesCount = 0;
+                        }
+                        continue;
+                    }
+
+                    // Cədvəl başladıqdan sonra
+                    if (tableStarted) {
+                        // Tarix ilə başlayan yeni sətir
+                        if (line.matches("\\d{2}[.-]\\d{2}[.-]\\d{4}.*")) {
+                            if (currentRow.length() > 0) {
+                                tableContent.append(currentRow.toString()).append("\n");
+                                currentRow.setLength(0);
+                            }
+                            currentRow.append(line);
+                            nonTableLinesCount = 0;
+                        }
+                        // Cədvələ aid ola biləcək digər sətirlər
+                        else if (!line.isEmpty() &&
+                                !line.contains("Page") &&
+                                !line.contains("VÖEN") &&
+                                !line.contains("tel:") &&
+                                !line.contains("www.") &&
+                                !line.contains("Bank") &&
+                                !line.matches(".*[A-Z]{2}\\d{2}[A-Z]{4}\\d+.*")) { // IBAN filtiri
+                            if (currentRow.length() > 0) {
+                                currentRow.append(" ").append(line);
+                            }
+                            nonTableLinesCount = 0;
+                        }
+                        // Cədvələ aid olmayan sətirlər
+                        else if (!line.isEmpty()) {
+                            nonTableLinesCount++;
+                            if (nonTableLinesCount >= 2) { // 2 ardıcıl cədvələ aid olmayan sətir
+                                if (currentRow.length() > 0) {
+                                    tableContent.append(currentRow.toString()).append("\n");
+                                }
+                                tableStarted = false;
+                                headerFound = false; // Yeni cədvəl üçün başlıq axtarışını sıfırla
+                                currentRow.setLength(0);
+                                nonTableLinesCount = 0;
+                            }
+                        }
+                    }
                 }
             }
 
-            return analysisResult;
-        }catch (Exception e){
-            throw new PdfProcessingException("Failed to analyze PDF", e);
-        }
-    }
-
-    private void processTableData(List<String[]> tableData) {
-        try {
-            for (String[] row : tableData) {
-                log.info("Processing row: {}", String.join(", ", row));
-
-                reportRepository.save(new ReportEntity());
+            // Sonuncu sətri əlavə et
+            if (currentRow.length() > 0) {
+                tableContent.append(currentRow.toString()).append("\n");
             }
-        }catch (Exception e){
-            throw new PdfProcessingException("Failed to process PDF", e);
+
+            String result = tableContent.toString().trim();
+            log.info("PDFBox son çıxarılmış cədvəl: {}", result);
+            return result.isEmpty() ? "" : result;
+        } catch (Exception e) {
+            log.error("PDFBox ilə cədvəl çıxarılmasında xəta: {}", e.getMessage());
+            throw new IOException("PDFBox ilə cədvəl çıxarılmadı", e);
         }
     }
 
 
-    // Tesseract OCR ilə PDF vizuallaşdırıb mətni çıxarmaq
-    private String extractTextWithOCR(InputStream pdfStream, String language) throws IOException, TesseractException {
-        // PDF-i vizuallaşdırır
-        try (PDDocument document = PDDocument.load(pdfStream)) {
-            PDFRenderer pdfRenderer = new PDFRenderer(document);
-            StringBuilder extractedText = new StringBuilder();
 
-            // OCR ilə bütün səhifələr üstündə proses
-            for (int pageIndex = 0; pageIndex < document.getNumberOfPages(); pageIndex++) {
-                BufferedImage image = pdfRenderer.renderImage(pageIndex);  // səyfələri vizuallaşdırır
-                extractedText.append(extractTextFromImage(image,language));  // Vizualı OCR ilə mətnə çevirir
+    // Potensial cədvəl başlığını yoxlamaq üçün köməkçi metod
+    private boolean isPotentialTableHeader(String line) {
+        String[] words = line.split("\\s+");
+        int tableKeywordsCount = 0;
+        String[] tableKeywords = {"Tarix", "Əməliyyat", "Məbləğ", "Mədaxil", "Məxaric",
+                "Balans", "Təyinat", "Kart", "Komissiya", "ƏDV"};
+
+        for (String word : words) {
+            for (String keyword : tableKeywords) {
+                if (word.equalsIgnoreCase(keyword) || word.contains(keyword)) {
+                    tableKeywordsCount++;
+                    break;
+                }
             }
-            return extractedText.toString();
-        }catch (IOException e){
-            throw new PdfProcessingException("Failed to extract text from PDF", e);
         }
+
+        return tableKeywordsCount >= 2; // Ən azı 2 sütun adına bənzər söz
     }
 
 
-    // Vizualdan mətni çıxarmaq (OCR)
-    private String extractTextFromImage(BufferedImage image, String language) throws IOException {
+
+    // Fayl adına görə PDF-ləri siyahıya alma
+    public List<PdfEntity> getPdfsByFileName(String fileName) {
         try {
-            ITesseract tesseract = new Tesseract();
-
-            // Dil parametresini burada kullanıyoruz
-            tesseract.setLanguage(language);  // Dil seçimi
-            return tesseract.doOCR(image); // OCR
-        }catch (TesseractException e){
-            throw new PdfProcessingException("Failed to extract text from PDF", e);
+            return pdfRepository.findByFileName(fileName);
+        } catch (Exception e) {
+            log.error("Fayl adına görə PDF-lər siyahıya alınarkən xəta: {}", e.getMessage());
+            return List.of();
         }
     }
 
+
+
+    // Çıxarılmış mətnə görə PDF tapma
+    public PdfEntity getPdfByExtractedText(String extractedText) {
+        try {
+            return pdfRepository.findByExtractedText(extractedText);
+        } catch (Exception e) {
+            log.error("Çıxarılmış mətnə görə PDF tapılarkən xəta: {}", e.getMessage());
+            return null;
+        }
+    }
+
+
+
+    // Bütün PDF-ləri siyahıya alma
+    public List<PdfEntity> getAllPdfs() {
+        try {
+            return pdfRepository.findAll();
+        } catch (Exception e) {
+            log.error("Bütün PDF-lər siyahıya alınarkən xəta: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+
+
+    public void analyzeTextAsync(Long pdfId, String extractedText) {
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                AIAnalysisRequest request = new AIAnalysisRequest(
+                        pdfId.toString(),
+                        extractedText,
+                        "METADATA_COMPLETION"
+                );
+
+                AIAnalysisResponse response = aiServiceClient.analyzeText(request);
+
+                if (response != null && response.isSuccess() && response.getExtractedMetadata() != null) {
+                    Optional<PdfEntity> optionalPdf = pdfRepository.findById(pdfId);
+                    optionalPdf.ifPresent(pdf -> {
+                        pdf.setMetadata(convertMetadataToJsonString(response.getExtractedMetadata()));
+                        pdfRepository.save(pdf);
+                        log.info("PDF metadata ID üçün yeniləndi: {}", pdfId);
+                    });
+                } else {
+                    log.warn("AI təhlili PDF ID üçün uğursuz oldu: {}", pdfId);
+                }
+
+                return response;
+            } catch (Exception e) {
+                log.error("AI təhlilində xəta: {}", e.getMessage());
+                return null;
+            }
+        }).exceptionally(ex -> {
+            log.error("AI xidməti uğursuz oldu: {}", ex.getMessage());
+            return null;
+        });
+    }
+
+
+    // Metadata-nı JSON string-ə çevirmə köməkçi metodu
+    private String convertMetadataToJsonString(Map<String, Object> metadata) {
+        try {
+            return new ObjectMapper().writeValueAsString(metadata);
+        } catch (JsonProcessingException e) {
+            log.error("Metadata JSON-a çevrilərkən xəta", e);
+            return "{}";
+        }
+    }
 }

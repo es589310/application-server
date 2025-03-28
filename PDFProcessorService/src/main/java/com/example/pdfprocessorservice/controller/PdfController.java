@@ -1,65 +1,104 @@
 package com.example.pdfprocessorservice.controller;
 
 import com.example.pdfprocessorservice.entity.PdfEntity;
-import com.example.pdfprocessorservice.exception.PdfProcessingException;
-import com.example.pdfprocessorservice.repository.PdfRepository;
 import com.example.pdfprocessorservice.service.PdfProcessorService;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.util.List;
 
 @RestController
-@RequiredArgsConstructor
 @RequestMapping("/api/pdf")
-@Tag(name = "PDF Controller", description = "Endpoints for uploading and processing PDF files")
+@RequiredArgsConstructor
 @Slf4j
 public class PdfController {
+
     private final PdfProcessorService pdfProcessorService;
-    private final PdfRepository pdfRepository;
 
-    @PostMapping(value = "/upload", consumes = "multipart/form-data")
-    @Operation(summary = "Upload a PDF file", description = "Uploads a PDF file for processing and analysis.")
-    public ResponseEntity<Object> uploadPdfAsync(
-            @RequestParam("file")
-            @Parameter(description = "PDF file to be uploaded", required = true)
-            MultipartFile file,
-            @RequestParam("language")  // Dil parametresi eklendi
-            @Parameter(description = "Language for OCR", required = true)
-            String language){
 
+    @PostMapping(value = "/process", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<PdfEntity> processPdf(@RequestParam("file") MultipartFile file) {
         try {
-            pdfProcessorService.processPdf(file, language);  // Dil parametri ilə PDF
-            return ResponseEntity.ok().build();
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Error occurred while processing PDF: " + e.getMessage());
+            PdfEntity processedPdf = pdfProcessorService.processPdf(file);
+            log.info("PDF uğurla emal edildi: {}", processedPdf.getFileName());
+            return ResponseEntity.ok(processedPdf);
+        } catch (IOException e) {
+            log.error("PDF emal edilərkən səhv: {}", e.getMessage());
+            return ResponseEntity.status(500).body(null);
         }
     }
 
-    @GetMapping("/{pdfId}/table")
-    @Operation(summary = "Get the processed table data of a PDF", description = "Returns the table data from a processed PDF by ID.")
-    public ResponseEntity<List<String[]>> getProcessedTableData(@PathVariable("pdfId") Long pdfId) {
+    // PDF yükləmə endpoint'i (MinIO-dan faylı döndürür)
+    @GetMapping("/download/{id}")
+    public ResponseEntity<InputStreamResource> downloadPdf(@PathVariable Long id) {
         try {
-            PdfEntity pdfEntity = pdfRepository.findById(pdfId).orElse(null);
-            if (pdfEntity == null) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+            PdfEntity pdfEntity = pdfProcessorService.getPdfEntityById(id);
+            if (pdfEntity == null || pdfEntity.getMinioPath() == null) {
+                return ResponseEntity.notFound().build();
             }
 
-            List<String[]> tableData = pdfProcessorService.extractTableData(pdfEntity.getContent());
-            return ResponseEntity.ok(tableData);
-        }catch (Exception e) {
-            throw new PdfProcessingException("Error occurred while processing PDF: " + e.getMessage());
+            byte[] fileContent = pdfProcessorService.downloadFromMinIO(pdfEntity.getMinioPath());
+
+            InputStreamResource resource = new InputStreamResource(new ByteArrayInputStream(fileContent));
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + pdfEntity.getFileName());
+            headers.add(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, must-revalidate");
+            headers.add(HttpHeaders.PRAGMA, "no-cache");
+            headers.add(HttpHeaders.EXPIRES, "0");
+
+            return ResponseEntity.ok()
+                    .headers(headers)
+                    .contentLength(fileContent.length)
+                    .contentType(MediaType.APPLICATION_PDF)
+                    .body(resource);
+        } catch (IOException e) {
+            log.error("PDF yüklənərkən səhv: {}", e.getMessage());
+            return ResponseEntity.status(500).body(null);
         }
     }
 
+    // Fayl adına görə PDF-ləri siyahıya almaq
+    @GetMapping("/by-filename/{fileName}")
+    public ResponseEntity<List<PdfEntity>> getPdfsByFileName(@PathVariable String fileName) {
+        List<PdfEntity> pdfs = pdfProcessorService.getPdfsByFileName(fileName);
+        if (pdfs.isEmpty()) {
+            log.info("Bu fayl adı ilə PDF tapılmadı: {}", fileName);
+            return ResponseEntity.noContent().build();
+        }
+        log.info("Bu fayl adı ilə {} PDF tapıldı: {}", pdfs.size(), fileName);
+        return ResponseEntity.ok(pdfs);
+    }
 
+    // ExtractedText-ə görə PDF tapmaq
+    @GetMapping("/by-extracted-text")
+    public ResponseEntity<PdfEntity> getPdfByExtractedText(@RequestParam String extractedText) {
+        PdfEntity pdfEntity = pdfProcessorService.getPdfByExtractedText(extractedText);
+        if (pdfEntity == null) {
+            log.info("Extracted text ilə PDF tapılmadı: {}", extractedText);
+            return ResponseEntity.notFound().build();
+        }
+        log.info("Extracted text ilə PDF tapıldı: {}", pdfEntity.getFileName());
+        return ResponseEntity.ok(pdfEntity);
+    }
 
+    // Bütün PDF-ləri siyahıya almaq
+    @GetMapping("/all")
+    public ResponseEntity<List<PdfEntity>> getAllPdfs() {
+        List<PdfEntity> allPdfs = pdfProcessorService.getAllPdfs();
+        if (allPdfs.isEmpty()) {
+            log.info("Verilənlər bazasında PDF tapılmadı");
+            return ResponseEntity.noContent().build();
+        }
+        log.info("Ümumilikdə {} PDF tapıldı", allPdfs.size());
+        return ResponseEntity.ok(allPdfs);
+    }
 }

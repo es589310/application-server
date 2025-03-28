@@ -1,11 +1,13 @@
 package com.example.pdfprocessorservice.client;
 
+import com.example.pdfprocessorservice.dto.AIAnalysisRequest;
+import com.example.pdfprocessorservice.dto.AIAnalysisResponse;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;
 
-@FeignClient(name = "ai-service", url = "${ai.service.url}")
+@FeignClient(name = "AIService", url = "${ai.service.url}")
 public interface AIClient {
 
-    @PostMapping("/analyze")
-    String analyzeText(String extractedText);
+    @PostMapping("/ai/process")
+    AIAnalysisResponse analyzeText(AIAnalysisRequest extractedText);
 }

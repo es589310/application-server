@@ -1,0 +1,11 @@
+services:
+  postgres:
+    image: postgres:latest
+    container_name: ai_service_db
+    environment:
+      POSTGRES_DB: ai_service
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 232323
+    ports:
+      - "5439:5432"
+    restart: always
