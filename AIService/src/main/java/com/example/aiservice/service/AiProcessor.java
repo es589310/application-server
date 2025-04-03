@@ -84,7 +84,7 @@ public class AiProcessor {
     private String generatePrompt(String content, String analysisType) {
         if ("METADATA_COMPLETION".equals(analysisType)) {
             return String.format("""
-            Aşağıdaki metni analiz et ve her bir xərci aşağıdakı kateqoriyalardan birinə yerləşdir:
+            Aşağıdaki mətni analiz et və hər bir xərci aşağıdakı kateqoriyalardan birinə yerləşdir:
             - Restoran
             - Kafe
             - Kommunal ödənişlər
@@ -92,14 +92,15 @@ public class AiProcessor {
             - Taksilərə ödəniş
             - Alış-veriş (mağaza, market)
             Əgər bir xərc heç bir kateqoriyaya uyğun gəlmirsə, onu "Digər" olaraq işarələ.
-            Nəticəni JSON formatında qaytar, hər bir girişdə "date", "category" və "amount" sahələri olmalıdır.
+            Məlumatda mədaxil və məxaric mövcuddursa nəzərə al: Mədaxil('+') və məxaricləri('-')
+            Nəticəni JSON formatında qaytar, hər bir girişdə "date", "category", "income" və "expense"  sahələri olmalıdır.
 
             Metn: %s
             """, content);
         }
         return String.format("""
         %s analizini həyata keçirən bir AI köməkçisisən.
-        Aşağıdaki metni analiz et:
+        Aşağıdaki mətni  analiz et:
 
         Metn: %s
         """, analysisType, content);

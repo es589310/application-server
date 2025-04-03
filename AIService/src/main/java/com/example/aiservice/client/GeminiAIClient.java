@@ -26,7 +26,8 @@ public class GeminiAIClient {
                           @Value("${gemini.model}") String model) {
         this.apiKey = apiKey;
         this.model = model;
-        log.info("Gemini API anahtarı: {}", apiKey);
+        //log.info("Gemini API key: {}", apiKey);
+        log.info("Gemini API modeli: {}", model);
         this.webClient = webClientBuilder
                 .baseUrl(baseUrl) // Temel URL'yi properties dosyasından alıyoruz
                 .defaultHeader("Content-Type", "application/json")
@@ -40,7 +41,7 @@ public class GeminiAIClient {
                 Map.of("parts", List.of(Map.of("text", request.getExtractedText())))
         ));
 
-        log.info("Gemini AI'ye gönderilen istek: {}", body);
+        log.info("Gemini AI-a göndərilən istək: {}", body);
 
         return webClient.post()
                 .uri(uriBuilder -> uriBuilder
@@ -52,11 +53,11 @@ public class GeminiAIClient {
                 .onStatus(
                         httpStatus -> httpStatus.is4xxClientError() || httpStatus.is5xxServerError(),
                         clientResponse -> clientResponse.bodyToMono(String.class)
-                                .flatMap(errorBody -> Mono.error(new RuntimeException("Gemini AI API Hatası: " + errorBody)))
+                                .flatMap(errorBody -> Mono.error(new RuntimeException("Gemini AI API Xətası: " + errorBody)))
                 )
                 .bodyToMono(Map.class)
                 .map(response -> {
-                    log.info("Gemini AI'den alınan cevap: {}", response);
+                    log.info("Gemini AI-dan alınan cavab: {}", response);
                     List<Map<String, Object>> candidates = (List<Map<String, Object>>) response.get("candidates");
                     if (candidates != null && !candidates.isEmpty()) {
                         Map<String, Object> content = (Map<String, Object>) candidates.get(0).get("content");
@@ -64,9 +65,9 @@ public class GeminiAIClient {
                         String text = parts.get(0).get("text");
                         Map<String, Object> metadata = new HashMap<>();
                         metadata.put("analyzedText", text);
-                        return new AIAnalysisResponse(true, metadata, "Başarılı");
+                        return new AIAnalysisResponse(true, metadata, "Alındı!");
                     }
-                    return new AIAnalysisResponse(false, null, "Gemini AI cevabı boş");
+                    return new AIAnalysisResponse(false, null, "Gemini AI cavabı boşdur.");
                 });
     }
 }
