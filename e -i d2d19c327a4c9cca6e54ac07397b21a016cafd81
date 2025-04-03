@@ -1,0 +1,113 @@
+[33mcommit eadca758996fb7835b1888f59514486370c5c51f[m[33m ([m[1;36mHEAD -> [m[1;32mmr-panah[m[33m)[m
+Author: mr.panahov <panahovemin10@gmail.com>
+Date:   Sat Mar 29 02:04:02 2025 +0400
+
+    AI ödəniş istəyir
+
+[33mcommit 9e07cc1e36b2b8ec5ab4d1b4d5a41a66df8ce1bc[m
+Author: mr.panahov <panahovemin10@gmail.com>
+Date:   Sat Mar 29 01:53:49 2025 +0400
+
+    AI cavab qaytarmaq üçün ödəniş tələb edir
+
+[33mcommit d2d19c327a4c9cca6e54ac07397b21a016cafd81[m[33m ([m[1;31morigin/mr-panah[m[33m)[m
+Author: mr.panahov <panahovemin10@gmail.com>
+Date:   Fri Mar 28 23:56:53 2025 +0400
+
+    PDF prosesi tamamlanıb
+
+[33mcommit e6a2e543410d1053b2c4709c59de47ebd81f6bd6[m
+Author: mr.panahov <panahovemin10@gmail.com>
+Date:   Fri Mar 28 23:55:55 2025 +0400
+
+    AI Request qəbul edir, Response-da problem var
+
+[33mcommit c571ca6075c86ffcccbae1883e0dbb2e53446e31[m
+Author: mr.panahov <panahovemin10@gmail.com>
+Date:   Thu Mar 27 20:42:02 2025 +0400
+
+    Pdflərin lazımlı hissəsini extract edir
+
+[33mcommit afe77892d0e0b63c01446d21510cf9841881fd08[m
+Author: mr.panahov <panahovemin10@gmail.com>
+Date:   Thu Mar 27 15:27:39 2025 +0400
+
+    AI servicə məlumat ötürmə zamanı problem yaşayır
+
+[33mcommit 88663c5a864c3efe4831dd27909df975c0d779b5[m
+Author: mr.panahov <panahovemin10@gmail.com>
+Date:   Thu Mar 27 15:26:34 2025 +0400
+
+    Ümumi Pdf-i extarct edir
+
+[33mcommit 78b360de8dd8a02b377dcda1c6576d899d90b1dd[m
+Author: mr.panahov <panahovemin10@gmail.com>
+Date:   Tue Mar 18 20:20:27 2025 +0400
+
+    IO error: Connection refused
+
+[33mcommit 511e4f7fa5aa03e96ed99815b988c4bbd54e8977[m
+Author: mr.panahov <panahovemin10@gmail.com>
+Date:   Wed Mar 12 20:38:19 2025 +0400
+
+    AI model change
+
+[33mcommit cf54280080c98c9086037a7ed881c8abe2395a9d[m
+Author: mr.panahov <panahovemin10@gmail.com>
+Date:   Mon Mar 10 17:43:13 2025 +0400
+
+    Last Changes
+
+[33mcommit 26030afe4e3fac793c0d7fc9b7d05dd6fbdfc632[m
+Author: mr.panahov <panahovemin10@gmail.com>
+Date:   Mon Mar 10 17:42:07 2025 +0400
+
+    Köhnə Aİ çəkmə modelini yenisi ilə əvəz etməliyəm
+
+[33mcommit 8c4fdbcfa7bef05fbb47f0552fdf81c08cfbcb28[m
+Author: mr.panahov <panahovemin10@gmail.com>
+Date:   Sat Mar 8 17:24:39 2025 +0400
+
+    AI Service-i düzəldirəm
+
+[33mcommit be6e97f86e79f6999ac84ec8e3565e6e67ee1f44[m
+Author: mr.panahov <panahovemin10@gmail.com>
+Date:   Wed Mar 5 16:00:10 2025 +0400
+
+    PDF-i oxuyur, Storage-ə göndərir, ancaq table başlıqlarında problem var, tanımır
+
+[33mcommit 8b96c91764b314eb2bf42ea40bad36a217b9d04b[m
+Author: mr.panahov <panahovemin10@gmail.com>
+Date:   Tue Mar 4 17:38:56 2025 +0400
+
+    Problem:Müvəqqəti faylı saxlaya bilmir
+
+[33mcommit d42195998b2aee8e79901eb19cbf5e127da29ea7[m
+Author: mr.panahov <panahovemin10@gmail.com>
+Date:   Tue Mar 4 15:54:05 2025 +0400
+
+    Problem:Müvəqqəti faylı saxlaya bilmir
+
+[33mcommit 2f2efa1e338f0e10afcb0a29b17d7ce836181788[m
+Author: mr.panahov <panahovemin10@gmail.com>
+Date:   Wed Feb 26 20:39:21 2025 +0400
+
+    Last Changes
+
+[33mcommit 514dc45ba32b9e9eb1280cfe4eb52a87931732e0[m
+Author: mr.panahov <panahovemin10@gmail.com>
+Date:   Wed Feb 26 19:46:14 2025 +0400
+
+    Last Changes
+
+[33mcommit e5c86bb47a923c48281e005ca8830ecfe8fae5e0[m
+Author: mr.panahov <panahovemin10@gmail.com>
+Date:   Tue Feb 18 13:26:42 2025 +0400
+
+    Application servers
+
+[33mcommit 88129eae163af1ae0085ba3f0f0b0c60e576abeb[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmain[m[33m)[m
+Author: Emin Panahov <117656930+es589310@users.noreply.github.com>
+Date:   Tue Feb 18 13:14:02 2025 +0400
+
+    Initial commit
