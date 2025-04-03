@@ -272,50 +272,61 @@ public class PdfProcessorService {
                     // Cədvəl başlığını tapmaq
                     if (!headerFound && isPotentialTableHeader(line)) {
                         headerFound = true;
+                        log.debug("Cədvəl başlığı tapıldı: {}", line);
                         continue; // Başlığı əlavə etmirik, yalnız məlumat sətirlərini toplayırıq
                     }
 
                     // Cədvəlin başlanğıcını dinamik tapmaq
                     if (headerFound && !tableStarted) {
-                        if (line.matches("\\d{2}[.-]\\d{2}[.-]\\d{4}.*") &&
-                                (line.contains(".") || line.contains("-") || line.matches(".*\\d+\\.\\d{2}.*"))) {
+                        if (line.matches("\\d{2}[.-]\\d{2}[.-]\\d{4}.*") || // Tarix formatı
+                                line.matches(".*(www\\.|http).*") ||         // Link formatı
+                                line.matches(".*[-+]?\\d+\\.\\d{2}.*")) {    // Rəqəmli məbləğ formatı
                             tableStarted = true;
                             currentRow.append(line);
                             nonTableLinesCount = 0;
+                            log.debug("Cədvəl başlanğıcı tapıldı: {}", line);
+                        } else {
+                            log.debug("Cədvəl başlanğıcı kimi qəbul edilmədi: {}", line);
                         }
                         continue;
                     }
 
                     // Cədvəl başladıqdan sonra
                     if (tableStarted) {
-                        // Tarix ilə başlayan yeni sətir
-                        if (line.matches("\\d{2}[.-]\\d{2}[.-]\\d{4}.*")) {
+                        // Tarix, link və ya məbləğ ilə başlayan yeni sətir
+                        if (line.matches("\\d{2}[.-]\\d{2}[.-]\\d{4}.*") || // Tarix formatı
+                                line.matches(".*(www\\.|http).*") ||         // Link formatı
+                                line.matches(".*[-+]?\\d+\\.\\d{2}.*")) {    // Rəqəmli məbləğ formatı
                             if (currentRow.length() > 0) {
                                 tableContent.append(currentRow.toString()).append("\n");
+                                log.debug("Tamamlanmış sətir cədvələ əlavə olundu: {}", currentRow.toString());
                                 currentRow.setLength(0);
                             }
                             currentRow.append(line);
                             nonTableLinesCount = 0;
+                            log.debug("Cədvələ əlavə olunan yeni sətir: {}", line);
                         }
                         // Cədvələ aid ola biləcək digər sətirlər
                         else if (!line.isEmpty() &&
                                 !line.contains("Page") &&
                                 !line.contains("VÖEN") &&
                                 !line.contains("tel:") &&
-                                !line.contains("www.") &&
                                 !line.contains("Bank") &&
                                 !line.matches(".*[A-Z]{2}\\d{2}[A-Z]{4}\\d+.*")) { // IBAN filtiri
                             if (currentRow.length() > 0) {
                                 currentRow.append(" ").append(line);
+                                log.debug("Mövcud sətrə əlavə olundu: {}", line);
                             }
                             nonTableLinesCount = 0;
                         }
                         // Cədvələ aid olmayan sətirlər
                         else if (!line.isEmpty()) {
                             nonTableLinesCount++;
+                            log.debug("Cədvələ aid olmayan sətir: {} (nonTableLinesCount: {})", line, nonTableLinesCount);
                             if (nonTableLinesCount >= 2) { // 2 ardıcıl cədvələ aid olmayan sətir
                                 if (currentRow.length() > 0) {
                                     tableContent.append(currentRow.toString()).append("\n");
+                                    log.debug("Cədvəl bitdi, son sətir əlavə olundu: {}", currentRow.toString());
                                 }
                                 tableStarted = false;
                                 headerFound = false; // Yeni cədvəl üçün başlıq axtarışını sıfırla
@@ -330,6 +341,7 @@ public class PdfProcessorService {
             // Sonuncu sətri əlavə et
             if (currentRow.length() > 0) {
                 tableContent.append(currentRow.toString()).append("\n");
+                log.debug("Son sətir cədvələ əlavə olundu: {}", currentRow.toString());
             }
 
             String result = tableContent.toString().trim();
@@ -340,8 +352,6 @@ public class PdfProcessorService {
             throw new IOException("PDFBox ilə cədvəl çıxarılmadı", e);
         }
     }
-
-
 
     // Potensial cədvəl başlığını yoxlamaq üçün köməkçi metod
     private boolean isPotentialTableHeader(String line) {
