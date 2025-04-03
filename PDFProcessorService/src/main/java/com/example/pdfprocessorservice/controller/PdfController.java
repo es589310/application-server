@@ -78,6 +78,7 @@ public class PdfController {
         return ResponseEntity.ok(pdfs);
     }
 
+    /*
     // ExtractedText-ə görə PDF tapmaq
     @GetMapping("/by-extracted-text")
     public ResponseEntity<PdfEntity> getPdfByExtractedText(@RequestParam String extractedText) {
@@ -89,6 +90,7 @@ public class PdfController {
         log.info("Extracted text ilə PDF tapıldı: {}", pdfEntity.getFileName());
         return ResponseEntity.ok(pdfEntity);
     }
+    */
 
     // Bütün PDF-ləri siyahıya almaq
     @GetMapping("/all")

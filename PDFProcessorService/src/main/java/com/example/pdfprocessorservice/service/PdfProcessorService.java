@@ -375,7 +375,7 @@ public class PdfProcessorService {
     }
 
 
-
+    /*
     // Çıxarılmış mətnə görə PDF tapma
     public PdfEntity getPdfByExtractedText(String extractedText) {
         try {
@@ -385,7 +385,7 @@ public class PdfProcessorService {
             return null;
         }
     }
-
+    */
 
 
     // Bütün PDF-ləri siyahıya alma
