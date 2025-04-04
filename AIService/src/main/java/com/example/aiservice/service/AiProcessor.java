@@ -49,10 +49,8 @@ public class AiProcessor {
                             ? response.getExtractedMetadata().toString()
                             : "Təhlil nəticəsi yoxdur";
 
-                    // JSON parse etme (isteğe bağlı)
                     if ("METADATA_COMPLETION".equals(analysisType) && analysisResult.startsWith("[")) {
                         try {
-                            // JSON stringini kontrol et ve gerekirse parse et
                             return AiResponse.builder()
                                     .analysisResult(analysisResult) // JSON string olarak bırakabilirsin
                                     .success(true)
@@ -84,25 +82,56 @@ public class AiProcessor {
     private String generatePrompt(String content, String analysisType) {
         if ("METADATA_COMPLETION".equals(analysisType)) {
             return String.format("""
-            Aşağıdaki mətni analiz et və hər bir xərci aşağıdakı kateqoriyalardan birinə yerləşdir:
-            - Restoran
-            - Kafe
-            - Kommunal ödənişlər
-            - Banklara ödənişlər
-            - Taksilərə ödəniş
-            - Alış-veriş (mağaza, market)
-            Əgər bir xərc heç bir kateqoriyaya uyğun gəlmirsə, onu "Digər" olaraq işarələ.
-            Məlumatda mədaxil və məxaric mövcuddursa nəzərə al: Mədaxil('+') və məxaricləri('-')
-            Nəticəni JSON formatında qaytar, hər bir girişdə "date", "category", "income" və "expense"  sahələri olmalıdır.
+        Analyze the following text and categorize each transaction into one of these categories:
+        - Restaurant
+        - Cafe
+        - Utility payments
+        - Bank payments (official bank transfers, e.g., SWIFT, IBAN payments)
+        - Taxi payments (e.g., Bolt, Yango)
+        - Shopping (stores, markets, e.g., Favorit Market, Ərzaq Mağaza)
+        - Pharmacy (e.g., Zeytun Aptek, Buta Aptek)
+        - Food delivery (e.g., Wolt, Volt as courier service)
+        - Mobile payments (e.g., Bakcell)
+        - Technology/Subscriptions (e.g., Apple, Microsoft, Spotify, Google)
+        - Travel (e.g., Kiwi.com)
+        - Personal transfers (e.g., payments to individuals like Necibe Xala, Fərid H.)
+        - Bank service fees/Commissions (e.g., Conversion fee, Prime üçün xidmət haqqı)
+        - Fuel (e.g., Azpetrol)
+        - Parking (e.g., azparking)
+        - Public transport (e.g., BakıKart)
+        - Online payments (e.g., MilliÖn, eManat)
+        
+        If a transaction doesn’t fit any category or its purpose is unclear, mark it as "Other".
+        For transactions starting with "Purchase", consider the words following "Purchase" to determine the category (e.g., "Purchase APPLE.COM" → "Technology/Subscriptions").
+        
+        Take into account income and expenses based on the "Məbləğ" field:
+        - If "Məbləğ" starts with "+", classify it as "income".
+        - If "Məbləğ" starts with "-", classify it as "expense".
+        - Remove the "+" or "-" signs when assigning the amount to "income" or "expense".
+        
+        Return each transaction as a separate entry based on its transaction date, even if multiple transactions occur on the same day. Do not combine incomes or expenses for the same date into a single entry.
+        For each entry, include:
+        - "date": Extracted from "Tarix" in "DD-MM-YYYY" format (ignore time).
+        - "category": The determined category.
+        - "income": Set to the amount if "Məbləğ" is positive, otherwise 0.00.
+        - "expense": Set to the amount if "Məbləğ" is negative, otherwise 0.00.
+        - "balance": The value from the "Balans" field, if present; otherwise, leave it as null.
+        
+        Special cases:
+        - "Şəxsi vəsaitlərin qalıq faizi": Treat as "Bank service fees/Commissions" or "Other" if unclear, typically income.
+        - "Prime üçün xidmət haqqı": Treat as "Bank service fees/Commissions", typically expense.
+        - "Conversion fee": Treat as "Bank service fees/Commissions", typically expense.
 
-            Metn: %s
-            """, content);
+        Return the result in JSON format.
+
+        Text: %s
+        """, content);
         }
         return String.format("""
-        %s analizini həyata keçirən bir AI köməkçisisən.
-        Aşağıdaki mətni  analiz et:
+    You are an AI assistant performing %s analysis.
+    Analyze the following text:
 
-        Metn: %s
-        """, analysisType, content);
+    Text: %s
+    """, analysisType, content);
     }
 }
