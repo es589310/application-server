@@ -12,15 +12,15 @@ public class DotenvConfig {
     public void loadDotenv() {
         try {
             Dotenv dotenv = Dotenv.configure()
-                    .directory("/home/mrdoc/IdeaProjects/application-server/AIService") // Proje kök dizini
-                    .ignoreIfMissing() // Dosya yoksa hata verme
+                    .directory("/home/mrdoc/IdeaProjects/application-server/AIService")
+                    .ignoreIfMissing() // Fayl yoxdusa xəta verməməyi üçün
                     .load();
             dotenv.entries().forEach(entry -> {
-                System.out.println("Yüklenen .env değişkeni: " + entry.getKey() + "=" + entry.getValue());
+                System.out.println("Yüklənən .env varaible: " + entry.getKey() + "=" + entry.getValue());
                 System.setProperty(entry.getKey(), entry.getValue());
             });
         } catch (Exception e) {
-            System.err.println(".env dosyası yüklenirken hata oluştu: " + e.getMessage());
+            System.err.println(".env faylı yüklənərkən xəta oldu: " + e.getMessage());
         }
     }
 }

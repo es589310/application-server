@@ -29,13 +29,13 @@ public class GeminiAIClient {
         //log.info("Gemini API key: {}", apiKey);
         log.info("Gemini API modeli: {}", model);
         this.webClient = webClientBuilder
-                .baseUrl(baseUrl) // Temel URL'yi properties dosyasından alıyoruz
+                .baseUrl(baseUrl) // propertiesdən alınan url
                 .defaultHeader("Content-Type", "application/json")
                 .build();
     }
 
     public Mono<AIAnalysisResponse> generateText(AIAnalysisRequest request) {
-        // Gemini API'nin beklediği istek gövdesi
+        // Gemini API-ın gözlədiyi request məntiqi
         Map<String, Object> body = new HashMap<>();
         body.put("contents", List.of(
                 Map.of("parts", List.of(Map.of("text", request.getExtractedText())))
@@ -46,7 +46,7 @@ public class GeminiAIClient {
         return webClient.post()
                 .uri(uriBuilder -> uriBuilder
                         .path("/models/{model}:generateContent")
-                        .queryParam("key", apiKey) // API anahtarını sorgu parametresi olarak ekliyoruz
+                        .queryParam("key", apiKey) // API key-i sorğu parametri olaraq əlavə edilib
                         .build(model))
                 .bodyValue(body)
                 .retrieve()
