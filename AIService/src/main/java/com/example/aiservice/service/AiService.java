@@ -5,12 +5,13 @@ import com.example.aiservice.dto.AIAnalysisRequest;
 import com.example.aiservice.dto.AIAnalysisResponse;
 import com.example.aiservice.entity.AiRequest;
 import com.example.aiservice.entity.AiResponse;
-import com.example.aiservice.repository.AiResponseRepository;
 import com.example.aiservice.repository.AiRequestRepository;
+import com.example.aiservice.repository.AiResponseRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
@@ -26,8 +27,8 @@ public class AiService {
 
     private final PdfProcessorClient pdfProcessorClient;
     private final AiProcessor aiProcessor;
-    private final AiRequestRepository aiRequestRepository; // AiRequest üçün
-    private final AiResponseRepository aiResponseRepository; // AiResponse üçün
+    private final AiRequestRepository aiRequestRepository;
+    private final AiResponseRepository aiResponseRepository;
 
     @Transactional(propagation = REQUIRED)
     public AIAnalysisResponse analyzeText(AIAnalysisRequest request) {
@@ -40,7 +41,7 @@ public class AiService {
                     .analysisType(request.getAnalysisType())
                     .requestDate(LocalDateTime.now())
                     .build();
-            aiRequest = aiRequestRepository.save(aiRequest); // AiRequest-i saxla
+            final AiRequest savedAiRequest = aiRequestRepository.save(aiRequest); // final elan edirik
 
             String textToAnalyze = request.getExtractedText();
             if (textToAnalyze == null || textToAnalyze.trim().isEmpty()) {
@@ -48,7 +49,7 @@ public class AiService {
                 textToAnalyze = pdfProcessorClient.getPdfContent(String.valueOf(request.getPdfId()));
                 if (textToAnalyze == null) {
                     AiResponse errorResponse = AiResponse.builder()
-                            .request(aiRequest)
+                            .request(savedAiRequest)
                             .success(false)
                             .message("PDF məzmunu alınmadı")
                             .createdAt(LocalDateTime.now())
@@ -56,21 +57,53 @@ public class AiService {
                     aiResponseRepository.save(errorResponse);
                     return new AIAnalysisResponse(false, null, "PDF məzmunu alınmadı");
                 }
-                aiRequest.setExtractedText(textToAnalyze);
-                aiRequest = aiRequestRepository.save(aiRequest);
+                savedAiRequest.setExtractedText(textToAnalyze);
+                aiRequestRepository.save(savedAiRequest); // Yenilənmiş obyekti saxlayırıq
             }
 
-            Mono<AiResponse> aiResponseMono = aiProcessor.processWithAi(textToAnalyze, request.getAnalysisType());
+            // Flux<AiResponse>-u Mono<AiResponse>-a çeviririk
+            Flux<AiResponse> aiResponseFlux = aiProcessor.processWithAi(textToAnalyze, request.getAnalysisType());
+            Mono<AiResponse> aiResponseMono = aiResponseFlux
+                    .collectList() // Bütün nəticələri List<AiResponse> kimi toplayır
+                    .map(responses -> {
+                        if (responses.isEmpty()) {
+                            return AiResponse.builder()
+                                    .request(savedAiRequest) // final dəyişəni istifadə edirik
+                                    .success(false)
+                                    .message("AI təhlili nəticəsi yoxdur")
+                                    .createdAt(LocalDateTime.now())
+                                    .build();
+                        }
+
+                        // Bütün nəticələri birləşdiririk
+                        StringBuilder combinedResult = new StringBuilder();
+                        boolean allSuccess = true;
+                        for (AiResponse resp : responses) {
+                            combinedResult.append(resp.getAnalysisResult()).append("\n");
+                            if (!resp.isSuccess()) {
+                                allSuccess = false;
+                            }
+                        }
+
+                        return AiResponse.builder()
+                                .request(savedAiRequest) // final dəyişəni istifadə edirik
+                                .analysisResult(combinedResult.toString().trim())
+                                .success(allSuccess)
+                                .message(allSuccess ? "Uğurlu" : "Qismən uğursuz")
+                                .createdAt(LocalDateTime.now())
+                                .build();
+                    });
+
             AiResponse aiResponse = aiResponseMono.block();
             if (aiResponse == null || !aiResponse.isSuccess()) {
                 aiResponse = AiResponse.builder()
+                        .request(savedAiRequest)
                         .success(false)
                         .message("AI təhlili uğursuz oldu")
                         .createdAt(LocalDateTime.now())
                         .build();
             }
 
-            aiResponse.setRequest(aiRequest);
             aiResponseRepository.save(aiResponse);
 
             Map<String, Object> metadata = new HashMap<>();
@@ -87,9 +120,9 @@ public class AiService {
                     .analysisType(request.getAnalysisType())
                     .requestDate(LocalDateTime.now())
                     .build();
-            errorRequest = aiRequestRepository.save(errorRequest);
+            final AiRequest savedErrorRequest = aiRequestRepository.save(errorRequest);
             AiResponse errorResponse = AiResponse.builder()
-                    .request(errorRequest)
+                    .request(savedErrorRequest)
                     .success(false)
                     .message("Təhlil uğursuz oldu: " + e.getMessage())
                     .createdAt(LocalDateTime.now())
@@ -98,5 +131,4 @@ public class AiService {
             return new AIAnalysisResponse(false, null, "Təhlil uğursuz oldu: " + e.getMessage());
         }
     }
-
 }
