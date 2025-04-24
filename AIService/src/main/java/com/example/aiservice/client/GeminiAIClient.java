@@ -26,31 +26,38 @@ public class GeminiAIClient {
     private final String apiKey;
     private final String model;
     private final String baseUrl;
+    private final int maxOutputTokens; // Yeni parametr
 
     public GeminiAIClient(RestTemplate restTemplate,
                           @Value("${gemini.api.key}") String apiKey,
                           @Value("${gemini.api.base-url}") String baseUrl,
-                          @Value("${gemini.model}") String model) {
+                          @Value("${gemini.model}") String model,
+                          @Value("${gemini.maxOutputTokens}") int maxOutputTokens) { // Parametri oxu
         this.restTemplate = restTemplate;
         this.apiKey = apiKey;
         this.model = model;
         this.baseUrl = baseUrl;
-        log.info("Gemini API modeli: {}", model);
+        this.maxOutputTokens = maxOutputTokens;
+        log.info("Gemini API modeli: {}, maxOutputTokens: {}", model, maxOutputTokens);
     }
 
     @Retryable(
             value = {HttpServerErrorException.class, org.springframework.web.client.ResourceAccessException.class},
             maxAttempts = 3,
-            backoff = @Backoff(delay = 1000, multiplier = 2) // 1sn, 2sn, 4sn gecikme
+            backoff = @Backoff(delay = 1000, multiplier = 2)
     )
     public AIAnalysisResponse generateText(AIAnalysisRequest request) {
         Map<String, Object> body = new HashMap<>();
         body.put("contents", List.of(
                 Map.of("parts", List.of(Map.of("text", request.getExtractedText())))
         ));
+        // maxOutputTokens əlavə et
+        Map<String, Object> generationConfig = new HashMap<>();
+        generationConfig.put("maxOutputTokens", maxOutputTokens);
+        body.put("generationConfig", generationConfig);
 
         if (log.isDebugEnabled()) {
-            log.debug("Gemini AI-a göndərilən istək: {}", body); // info -> debug
+            log.debug("Gemini AI-a göndərilən istək: {}", body);
         }
 
         try {
@@ -62,7 +69,7 @@ public class GeminiAIClient {
 
             ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.POST, entity, Map.class);
 
-            log.info("Gemini AI-dan cavab alındı, status={}", response.getStatusCode()); // Önemli, info
+            log.info("Gemini AI-dan cavab alındı, status={}", response.getStatusCode());
 
             List<Map<String, Object>> candidates = (List<Map<String, Object>>) response.getBody().get("candidates");
             if (candidates != null && !candidates.isEmpty()) {
@@ -76,7 +83,7 @@ public class GeminiAIClient {
             return new AIAnalysisResponse(false, null, "Gemini AI cavabı boşdur.");
         } catch (Exception e) {
             log.error("Gemini AI API Xətası: {}", e.getMessage());
-            throw e; // Retry için hatayı fırlat
+            throw e;
         }
     }
 }

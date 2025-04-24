@@ -18,6 +18,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Component
@@ -30,25 +32,35 @@ public class AiProcessor {
     @Value("${gemini.model}")
     private String model;
 
-    // Mətni hissələrə bölür, sıralı qalmasını təmin edir
-    private List<String> splitContent(String content, int chunkSize) {
+    private List<String> splitContent(String content) {
         List<String> chunks = new ArrayList<>();
         String[] lines = content.split("\n");
+
+        int chunkSize = Math.max(20, Math.min(50, lines.length / 5));
+        log.info("Calculated chunk size: {}", chunkSize);
+
         for (int i = 0; i < lines.length; i += chunkSize) {
             List<String> chunkLines = new ArrayList<>();
             for (int j = i; j < Math.min(i + chunkSize, lines.length); j++) {
-                String line = lines[j];
-                // Simplify line: keep date, description, amount
-                String simplifiedLine = line.replaceAll("\\s+-\\s+-\\s+\\d+\\.\\d{2}", "").trim();
-                if (!simplifiedLine.isEmpty()) {
-                    chunkLines.add(simplifiedLine);
+                String line = lines[j].trim();
+                if (line.matches("\\d{2}-\\d{2}-\\d{4}\\s+\\d{2}:\\d{2}:\\d{2}\\s+.+\\s+[-+]\\d+\\.\\d{2}")) {
+                    chunkLines.add(line);
+                } else {
+                    log.debug("Invalid chunk line: {}", line);
                 }
             }
             String chunk = String.join("\n", chunkLines).trim();
             if (!chunk.isEmpty()) {
                 chunks.add(chunk);
+                log.debug("Chunk {} created with {} lines: {}", chunks.size(), chunkLines.size(), chunk);
             }
         }
+
+        if (chunks.isEmpty() && !content.isEmpty()) {
+            log.warn("No chunks created, adding entire content as single chunk");
+            chunks.add(content);
+        }
+
         log.info("Split content into {} chunks", chunks.size());
         return chunks;
     }
@@ -85,7 +97,7 @@ public class AiProcessor {
                 List<Map<String, Object>> chunkList = objectMapper.readValue(result, new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>(){});
                 for (Map<String, Object> transaction : chunkList) {
                     boolean exists = combinedList.stream().anyMatch(existing ->
-                            existing.get("date").equals(transaction.get("date")) &&
+                            existing.get("timestamp").equals(transaction.get("timestamp")) &&
                                     existing.get("description").equals(transaction.get("description")) &&
                                     existing.get("income").equals(transaction.get("income")) &&
                                     existing.get("expense").equals(transaction.get("expense"))
@@ -98,13 +110,14 @@ public class AiProcessor {
                 log.debug("Failed to parse chunk JSON: {}, error: {}", result, e.getMessage());
             }
         }
-        // Validate output count against input
+
         int inputTransactionCount = (int) Arrays.stream(content.split("\n"))
-                .filter(line -> line.matches("\\d{2}-\\d{2}-\\d{4}\\s+\\d{2}:\\d{2}:\\d{2}\\s+.*?(?:[-+]\\d+\\.\\d{2}).*"))
+                .filter(line -> line.matches("\\d{2}-\\d{2}-\\d{4}\\s+\\d{2}:\\d{2}:\\d{2}\\s+.+\\s+[-+]\\d+\\.\\d{2}"))
                 .count();
         if (combinedList.size() < inputTransactionCount) {
             log.warn("Output transaction count ({}) is less than input count ({})", combinedList.size(), inputTransactionCount);
         }
+
         try {
             String finalResult = objectMapper.writeValueAsString(combinedList);
             log.info("Combined result: length={}", finalResult.length());
@@ -114,6 +127,7 @@ public class AiProcessor {
             return "[]";
         }
     }
+
     // Tək chunk-u emal edir
     private CompletableFuture<String> processChunk(String chunk, String analysisType, int chunkIndex) {
         return CompletableFuture.supplyAsync(() -> {
@@ -162,6 +176,31 @@ public class AiProcessor {
         });
     }
 
+    private String preprocessContent(String content) {
+        String[] lines = content.split("\n");
+        List<String> processedLines = new ArrayList<>();
+
+        // Yenilənmiş regex
+        Pattern transactionPattern = Pattern.compile(
+                "(?s)(\\d{2}-\\d{2}-\\d{4}\\s+\\d{2}:\\d{2}:\\d{2})\\s+(.+?)(?=\\s+[-+]\\d+\\.\\d{2}|\\z)\\s+([-+]\\d+\\.\\d{2})"
+        );
+        Matcher matcher = transactionPattern.matcher(content);
+
+        while (matcher.find()) {
+            String timestamp = matcher.group(1); // Tarix və saat
+            String description = matcher.group(2).trim(); // Təsvir
+            String amount = matcher.group(3); // Məbləğ
+            String combinedLine = String.format("%s %s %s", timestamp, description, amount);
+            processedLines.add(combinedLine);
+            log.debug("Processed transaction: {}", combinedLine);
+        }
+
+        String result = String.join("\n", processedLines);
+        log.info("Filtered lines count: {}", processedLines.size());
+        return result;
+    }
+
+
     @Async("aiTaskExecutor")
     public CompletableFuture<AiResponse> processWithAi(String content, String analysisType, AiRequest aiRequest) {
         log.info("Processing content, length: {}, analysisType: {}", content != null ? content.length() : 0, analysisType);
@@ -180,9 +219,26 @@ public class AiProcessor {
         }
 
         try {
-            List<String> chunks = splitContent(content, 20);
-            List<CompletableFuture<String>> futures = new ArrayList<>();
+            // 1. Məlumatı təmizlə
+            content = preprocessContent(content);
+            log.info("Preprocessed content, length: {}", content.length());
 
+            // 2. Təmizlənmiş məlumatı chunk-lara böl
+            List<String> chunks = splitContent(content); // 0 ötürürük, çünki chunkSize dinamik hesablanır
+            if (chunks.isEmpty()) {
+                log.warn("No chunks created after splitting content");
+                return CompletableFuture.completedFuture(
+                        AiResponse.builder()
+                                .request(aiRequest)
+                                .success(false)
+                                .message("No valid transactions found")
+                                .createdAt(LocalDateTime.now())
+                                .build()
+                );
+            }
+
+            // 3. Chunk-ları paralel emal et
+            List<CompletableFuture<String>> futures = new ArrayList<>();
             for (int i = 0; i < chunks.size(); i++) {
                 futures.add(processChunk(chunks.get(i), analysisType, i));
             }
@@ -194,6 +250,7 @@ public class AiProcessor {
                             .collect(Collectors.toList())
             ).join();
 
+            // 4. Cavabları birləşdir
             String combinedResult = combineResponses(analysisResults, content);
             return CompletableFuture.completedFuture(
                     AiResponse.builder()
@@ -221,43 +278,38 @@ public class AiProcessor {
         log.debug("Generating prompt for text: {}, analysisType: {}", content, analysisType);
         if ("METADATA_COMPLETION".equals(analysisType)) {
             return String.format("""
-            Analyze the following text and categorize each transaction into one of these categories:
-            - Restaurant
-            - Cafe
-            - Shopping (stores, markets, e.g., Favorit Market, Grocery Store)
-            - Technology/Subscriptions (e.g., Apple, Microsoft, Spotify, Google)
-            - Other
+            Analyze the following text and categorize each transaction. Some transaction descriptions may span multiple lines (e.g., '*4836 ilə bitən virtual kartıma', 'PBMB C2C Other Cards2'). Combine these lines into a single description before processing.
 
-            If a transaction does not fit any category or its purpose is unclear, mark it as "Other".
-            For transactions starting with "Purchase," consider the words after "Purchase" to determine the category (e.g., "Purchase APPLE.COM" → "Technology/Subscriptions").
+            Categorize each transaction into one of these categories:
+            - Restaurant (e.g., Wolt, Mado)
+            - Cafe (e.g., Starbucks, ABB CAFE BOTANIST)
+            - Shopping (stores, markets, e.g., Favorit Market, Ərzaq Mağaza)
+            - Technology/Subscriptions (e.g., Apple, Google)
+            - Utilities (e.g., KATV KaTv, Azərsu, Azərişıq)
+            - Financial (e.g., bank transfers, card-related transactions like *4836 ilə bitən virtual kartıma, PBMB C2C Other Cards2, SWIFT köçürmə, eManat, *N001 nömrəli biznes hesabımdan)
+            - Telecom (e.g., Bakcell +994558587754)
+            - Fees (e.g., Prime üçün xidmət haqqı)
+            - Interest (e.g., Şəxsi vəsaitlərin qalıq faizi)
+            - Other (if unclear or does not fit above categories)
 
             Parse each line of the input as a separate transaction, extracting:
             - Date: The first field in "DD-MM-YYYY" format.
-            - Description: The text following the date and time, up to the amount.
+            - Timestamp: The full date and time in "DD-MM-YYYY HH:MM:SS" format.
+            - Description: The text between the timestamp and the amount, combining multiple lines if necessary.
             - Amount: The number starting with "+" or "-", with two decimal places.
-
-            Ignore extra fields (e.g., balance values or metadata like "- - 113.80") after the amount.
-            If a line is malformed (e.g., missing amount or date), skip it and continue processing.
-            Ensure each transaction's date, description, and amount are correctly aligned with the input line.
 
             Based on the "Amount" field, account for income and expenses:
             - If "Amount" starts with "+", classify it as "income."
             - If "Amount" starts with "-", classify it as "expense."
             - Remove "+" or "-" signs and preserve the exact amount (e.g., -0.80 becomes expense: 0.80).
-            - If the amount is missing or invalid, set both income and expense to 0.00 and include a description noting "Invalid amount".
 
-            Record each transaction separately based on the transaction date, even if multiple transactions have the same description on the same day. Distinguish them by amount or timestamp to avoid skipping duplicates.
             Include the following for each entry:
-            - "date": Derived from "Date," in "DD-MM-YYYY" format (ignore time).
+            - "date": Derived from "Date," in "DD-MM-YYYY" format.
+            - "timestamp": Full date and time in "DD-MM-YYYY HH:MM:SS" format.
             - "category": The determined category.
             - "income": If "Amount" is positive, record the exact amount; otherwise, 0.00.
             - "expense": If "Amount" is negative, record the absolute value of the amount; otherwise, 0.00.
-            - "description": The exact value from the "Purpose" field, even if empty.
-
-            Special cases:
-            - Transactions with empty descriptions should be included with an empty "description" field.
-            - Ensure small amounts (e.g., 0.80) are captured accurately without confusion with other transactions.
-            - Verify that each valid input line produces a corresponding output transaction to avoid missing or misaligned entries.
+            - "description": The exact value from the description field, including all words and special characters.
 
             Return the result in JSON format. If no valid transactions are found, return an empty JSON array (`[]`).
 
@@ -265,10 +317,12 @@ public class AiProcessor {
             """, content);
         }
         return String.format("""
-        You are an AI assistant performing %s analysis.
-        Analyze the following text:
-
+        Analyze the following transactions in chronological order:
+        - Parse each line as a separate transaction, combining multi-line descriptions if necessary.
+        - Extract: date (DD-MM-YYYY), timestamp (DD-MM-YYYY HH:MM:SS), description, amount (+/-).
+        - Categorize into: Restaurant, Cafe, Shopping, Technology/Subscriptions, Utilities, Financial, Telecom, Fees, Interest, Other.
+        - Return JSON with fields: date, timestamp, category, income, expense, description.
         Text: %s
-        """, analysisType, content);
+        """, content);
     }
 }
