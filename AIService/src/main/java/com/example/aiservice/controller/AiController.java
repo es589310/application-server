@@ -6,7 +6,6 @@ import com.example.aiservice.service.AiService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-
 @RestController
 @RequestMapping("/ai")
 @RequiredArgsConstructor
@@ -18,6 +17,4 @@ public class AiController {
     public AIAnalysisResponse processText(@RequestBody AIAnalysisRequest request) {
         return aiService.analyzeText(request);
     }
-
-
 }

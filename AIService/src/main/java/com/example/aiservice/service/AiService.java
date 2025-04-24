@@ -11,12 +11,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import static org.springframework.transaction.annotation.Propagation.REQUIRED;
 
@@ -24,7 +23,6 @@ import static org.springframework.transaction.annotation.Propagation.REQUIRED;
 @Slf4j
 @RequiredArgsConstructor
 public class AiService {
-
     private final PdfProcessorClient pdfProcessorClient;
     private final AiProcessor aiProcessor;
     private final AiRequestRepository aiRequestRepository;
@@ -41,11 +39,11 @@ public class AiService {
                     .analysisType(request.getAnalysisType())
                     .requestDate(LocalDateTime.now())
                     .build();
-            final AiRequest savedAiRequest = aiRequestRepository.save(aiRequest); // final elan edirik
+            final AiRequest savedAiRequest = aiRequestRepository.save(aiRequest);
 
             String textToAnalyze = request.getExtractedText();
             if (textToAnalyze == null || textToAnalyze.trim().isEmpty()) {
-                log.info("Çıxarılmış mətn boşdur, PDF məzmunu pdfId={} ilə alınır", request.getPdfId());
+                log.debug("Çıxarılmış mətn boşdur, PDF məzmunu pdfId={} ilə alınır", request.getPdfId());
                 textToAnalyze = pdfProcessorClient.getPdfContent(String.valueOf(request.getPdfId()));
                 if (textToAnalyze == null) {
                     AiResponse errorResponse = AiResponse.builder()
@@ -58,43 +56,13 @@ public class AiService {
                     return new AIAnalysisResponse(false, null, "PDF məzmunu alınmadı");
                 }
                 savedAiRequest.setExtractedText(textToAnalyze);
-                aiRequestRepository.save(savedAiRequest); // Yenilənmiş obyekti saxlayırıq
+                aiRequestRepository.save(savedAiRequest);
             }
 
-            // Flux<AiResponse>-u Mono<AiResponse>-a çeviririk
-            Flux<AiResponse> aiResponseFlux = aiProcessor.processWithAi(textToAnalyze, request.getAnalysisType());
-            Mono<AiResponse> aiResponseMono = aiResponseFlux
-                    .collectList() // Bütün nəticələri List<AiResponse> kimi toplayır
-                    .map(responses -> {
-                        if (responses.isEmpty()) {
-                            return AiResponse.builder()
-                                    .request(savedAiRequest) // final dəyişəni istifadə edirik
-                                    .success(false)
-                                    .message("AI təhlili nəticəsi yoxdur")
-                                    .createdAt(LocalDateTime.now())
-                                    .build();
-                        }
+            // Asenkron çağrı
+            CompletableFuture<AiResponse> aiResponseFuture = aiProcessor.processWithAi(textToAnalyze, request.getAnalysisType(), savedAiRequest);
+            AiResponse aiResponse = aiResponseFuture.join(); // Senkron sonuç bekleme, veya async devam edilebilir
 
-                        // Bütün nəticələri birləşdiririk
-                        StringBuilder combinedResult = new StringBuilder();
-                        boolean allSuccess = true;
-                        for (AiResponse resp : responses) {
-                            combinedResult.append(resp.getAnalysisResult()).append("\n");
-                            if (!resp.isSuccess()) {
-                                allSuccess = false;
-                            }
-                        }
-
-                        return AiResponse.builder()
-                                .request(savedAiRequest) // final dəyişəni istifadə edirik
-                                .analysisResult(combinedResult.toString().trim())
-                                .success(allSuccess)
-                                .message(allSuccess ? "Uğurlu" : "Qismən uğursuz")
-                                .createdAt(LocalDateTime.now())
-                                .build();
-                    });
-
-            AiResponse aiResponse = aiResponseMono.block();
             if (aiResponse == null || !aiResponse.isSuccess()) {
                 aiResponse = AiResponse.builder()
                         .request(savedAiRequest)
