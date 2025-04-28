@@ -32,4 +32,7 @@ public class PdfEntity {
 
     @Column(columnDefinition = "TEXT")
     private String metadata;
+
+    //@Column
+    //private String hash; // SHA-256 hash
 }

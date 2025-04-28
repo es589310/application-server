@@ -15,7 +15,7 @@ public class TesseractsConfig {
     public Tesseract tesseract() {
         Tesseract tesseract = new Tesseract();
         tesseract.setDatapath(tessdataPath);
-        tesseract.setLanguage("eng+aze+aze_cyrl+rus");
+        tesseract.setLanguage("eng+aze+aze_cyrl");
         tesseract.setPageSegMode(6);
         return tesseract;
     }

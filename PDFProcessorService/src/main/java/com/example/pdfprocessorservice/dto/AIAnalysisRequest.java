@@ -10,5 +10,6 @@ import lombok.*;
 public class AIAnalysisRequest {
     private String pdfId;
     private String extractedText;
+    //private String hash; // SHA-256 hash
     private String analysisType;
 }
