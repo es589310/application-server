@@ -5,7 +5,55 @@ services:
     environment:
       POSTGRES_DB: ai_service
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 232323
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5439:5432"
-    restart: always
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - ai_service_network
+
+  redis:
+    image: redis:7.0-alpine
+    container_name: redis
+    command: redis-server /usr/local/etc/redis/redis.conf
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - ai_service_network
+
+  # ai_service:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: ai_service
+  #   ports:
+  #     - "8082:8082"
+  #   environment:
+  #     - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/ai_service
+  #     - SPRING_DATASOURCE_USERNAME=postgres
+  #     - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
+  #     - SPRING_DATA_REDIS_HOST=redis
+  #     - SPRING_DATA_REDIS_PORT=6379
+  #     - SPRING_DATA_REDIS_PASSWORD=${REDIS_PASSWORD}
+  #     - PDF_PROCESSOR_SERVICE_URL=http://localhost:8081
+  #     - GEMINI_API_KEY=${GEMINI_API_KEY}
+  #   depends_on:
+  #     - postgres
+  #     - redis
+  #   restart: unless-stopped
+  #   networks:
+  #     - ai_service_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  ai_service_network:
+    driver: bridge

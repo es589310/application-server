@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.ImageType;
@@ -27,7 +28,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 @RequiredArgsConstructor
@@ -71,17 +72,34 @@ public class PdfProcessorService {
                 }
             }
 
-            PdfEntity existingByText = pdfRepository.findByExtractedText(extractedText);
-            if (existingByText != null) {
-                log.info("Eyni çıxarılmış mətnə malik PDF artıq mövcuddur: {}", existingByText.getFileName());
-                return existingByText;
+            if (extractedText.trim().isEmpty()) {
+                log.warn("PDF-dən mətn çıxarılmadı: {}", file.getOriginalFilename());
+                throw new IOException("PDF-dən mətn çıxarılmadı");
             }
 
+            // SHA-256 hash-i hesablay
+            String hash = calculateSha256(extractedText);
+
+            // Eyni mətnə və ya hash-ə malik PDF-in olub-olmadığını yoxla
+            Optional<PdfEntity> existingByText = pdfRepository.findByExtractedText(extractedText);
+            if (existingByText.isPresent()) {
+                log.info("Eyni çıxarılmış mətnə malik PDF artıq mövcuddur: {}", existingByText.get().getFileName());
+                return existingByText.get();
+            }
+
+            Optional<PdfEntity> existingByHash = pdfRepository.findByHash(hash);
+            if (existingByHash.isPresent()) {
+                log.info("Eyni hash-ə malik PDF artıq mövcuddur: {}", existingByHash.get().getFileName());
+                return existingByHash.get();
+            }
+
+            // Eyni fayl adına malik PDF-ləri yoxla
             List<PdfEntity> existingByFileName = pdfRepository.findByFileName(file.getOriginalFilename());
             if (!existingByFileName.isEmpty()) {
                 log.warn("Eyni fayl adına malik PDF artıq mövcuddur: {}", file.getOriginalFilename());
             }
 
+            // MinIO-ya yüklə
             String filePath;
             try {
                 filePath = saveToMinIO(file);
@@ -90,11 +108,13 @@ public class PdfProcessorService {
                 throw new IOException("MinIO-ya fayl yüklənmədi", e);
             }
 
+            // PdfEntity yarat və saxla
             PdfEntity pdfEntity = PdfEntity.builder()
                     .fileName(file.getOriginalFilename())
                     .uploadDate(LocalDateTime.now())
                     .extractedText(extractedText)
                     .minioPath(filePath)
+                    .hash(hash)
                     .build();
 
             PdfEntity savedEntity;
@@ -105,7 +125,8 @@ public class PdfProcessorService {
                 throw new IOException("PDF bazaya yazıla bilmədi", e);
             }
 
-            analyzeTextAsync(savedEntity.getId(), extractedText);
+            // AI Service-ə asinxron sorğu göndər
+            analyzeTextAsync(savedEntity.getId(), extractedText, hash);
 
             return savedEntity;
         } catch (IOException e) {
@@ -114,7 +135,9 @@ public class PdfProcessorService {
         }
     }
 
-
+    private String calculateSha256(String text) {
+        return DigestUtils.sha256Hex(text);
+    }
 
     private String extractTablesWithTesseract(PDDocument document) throws IOException {
         StringBuilder tableContent = new StringBuilder();
@@ -173,8 +196,6 @@ public class PdfProcessorService {
         return result.isEmpty() ? "" : result;
     }
 
-
-
     private boolean isTableContent(String content) {
         if (content == null || content.trim().isEmpty()) {
             return false;
@@ -196,9 +217,6 @@ public class PdfProcessorService {
         return tableLikeLines >= 2; // Ən azı 2 məlumat sətri olmalı
     }
 
-
-
-    // Tesseract ilə OCR
     public String extractWithTesseract(BufferedImage tableImage) throws TesseractException {
         if (tableImage == null) {
             log.error("Tesseract null şəkil aldı");
@@ -212,9 +230,6 @@ public class PdfProcessorService {
         }
     }
 
-
-
-    // MinIO-ya fayl yükləmə köməkçi metodu
     public String saveToMinIO(MultipartFile file) throws IOException {
         try {
             return minIOService.uploadFile(file);
@@ -224,9 +239,6 @@ public class PdfProcessorService {
         }
     }
 
-
-
-    // PdfEntity-ni ID ilə alma
     public PdfEntity getPdfEntityById(Long id) {
         try {
             return pdfRepository.findById(id).orElse(null);
@@ -236,9 +248,6 @@ public class PdfProcessorService {
         }
     }
 
-
-
-    // MinIO-dan faylı endirmə
     public byte[] downloadFromMinIO(String minioPath) throws IOException {
         try {
             return minIOService.downloadFile(minioPath);
@@ -247,8 +256,6 @@ public class PdfProcessorService {
             throw e;
         }
     }
-
-
 
     private String extractTablesWithPDFBox(PDDocument document) throws IOException {
         PDFTextStripper stripper = new PDFTextStripper();
@@ -353,7 +360,6 @@ public class PdfProcessorService {
         }
     }
 
-    // Potensial cədvəl başlığını yoxlamaq üçün köməkçi metod
     private boolean isPotentialTableHeader(String line) {
         String[] words = line.split("\\s+");
         int tableKeywordsCount = 0;
@@ -372,9 +378,6 @@ public class PdfProcessorService {
         return tableKeywordsCount >= 2; // Ən azı 2 sütun adına bənzər söz
     }
 
-
-
-    // Fayl adına görə PDF-ləri siyahıya alma
     public List<PdfEntity> getPdfsByFileName(String fileName) {
         try {
             return pdfRepository.findByFileName(fileName);
@@ -384,21 +387,6 @@ public class PdfProcessorService {
         }
     }
 
-
-    /*
-    // Çıxarılmış mətnə görə PDF tapma
-    public PdfEntity getPdfByExtractedText(String extractedText) {
-        try {
-            return pdfRepository.findByExtractedText(extractedText);
-        } catch (Exception e) {
-            log.error("Çıxarılmış mətnə görə PDF tapılarkən xəta: {}", e.getMessage());
-            return null;
-        }
-    }
-    */
-
-
-    // Bütün PDF-ləri siyahıya alma
     public List<PdfEntity> getAllPdfs() {
         try {
             return pdfRepository.findAll();
@@ -408,16 +396,15 @@ public class PdfProcessorService {
         }
     }
 
-
-
-    public void analyzeTextAsync(Long pdfId, String extractedText) {
+    public void analyzeTextAsync(Long pdfId, String extractedText, String hash) {
         CompletableFuture.supplyAsync(() -> {
             try {
-                AIAnalysisRequest request = new AIAnalysisRequest(
-                        pdfId.toString(),
-                        extractedText,
-                        "METADATA_COMPLETION"
-                );
+                AIAnalysisRequest request = AIAnalysisRequest.builder()
+                        .pdfId(pdfId.toString()) // Long-dan String-ə çevrilmə
+                        .extractedText(extractedText)
+                        .analysisType("METADATA_COMPLETION")
+                        .hash(hash)
+                        .build();
 
                 AIAnalysisResponse response = aiServiceClient.analyzeText(request);
 
@@ -443,8 +430,6 @@ public class PdfProcessorService {
         });
     }
 
-
-    // Metadata-nı JSON string-ə çevirmə köməkçi metodu
     private String convertMetadataToJsonString(Map<String, Object> metadata) {
         try {
             return new ObjectMapper().writeValueAsString(metadata);

@@ -59,7 +59,7 @@ dependencies {
 	// https://mvnrepository.com/artifact/io.minio/minio
 	implementation group: 'io.minio', name: 'minio', version: '8.5.17'
 
-	// https://mvnrepository.com/artifact/commons-codec/commons-codec
+	// https://mvnrepository.com/artifact/commons-codec/commons-codec for SHA-256
 	implementation 'commons-codec:commons-codec:1.18.0'
 
 	//swagger open

@@ -17,6 +17,24 @@ public class AiRequest {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "pdf_id")
+    private String pdfId;
+
+    @Column(name = "extracted_text",columnDefinition = "TEXT")
+    private String extractedText;
+
+    @Column(name = "analysis_type")
+    private String analysisType;
+
+    @Column(name = "hash")
+    private String hash;
+
+    @Column(name = "request_date")
+    private LocalDateTime requestDate;
+}
+
+/*
+
     @Column(nullable = false)
     private String pdfId;
 
@@ -28,4 +46,4 @@ public class AiRequest {
 
     @Column(nullable = false)
     private LocalDateTime requestDate;
-}
+ */

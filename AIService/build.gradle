@@ -34,7 +34,7 @@ dependencies {
     annotationProcessor 'org.projectlombok:lombok'
 
     // Veritabanı (PostgreSQL)
-    implementation 'org.postgresql:postgresql'
+    implementation 'org.postgresql:postgresql:42.7.5'
 
     //FeignClient
     implementation 'org.springframework.cloud:spring-cloud-starter-openfeign:4.2.0'
