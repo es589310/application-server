@@ -9,6 +9,7 @@ import com.example.aiservice.repository.AiRequestRepository;
 import com.example.aiservice.repository.AiResponseRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,14 +30,18 @@ public class AiService {
     private final AiResponseRepository aiResponseRepository;
 
     @Transactional(propagation = REQUIRED)
+    @Cacheable(value = "aiAnalysis", key = "'ai:pdf:hash:' + #request.hash", unless = "#result == null || !#result.success")
     public AIAnalysisResponse analyzeText(AIAnalysisRequest request) {
-        log.info("Mətn təhlili başlayır: pdfId={}, analysisType={}", request.getPdfId(), request.getAnalysisType());
+        log.info("Mətn təhlili başlayır: pdfId={}, hash={}, analysisType={}",
+                request.getPdfId(), request.getHash(), request.getAnalysisType());
 
         try {
+            // Sorğunu bazada saxlasın
             AiRequest aiRequest = AiRequest.builder()
                     .pdfId(String.valueOf(request.getPdfId()))
                     .extractedText(request.getExtractedText())
                     .analysisType(request.getAnalysisType())
+                    .hash(request.getHash())
                     .requestDate(LocalDateTime.now())
                     .build();
             final AiRequest savedAiRequest = aiRequestRepository.save(aiRequest);
@@ -61,7 +66,7 @@ public class AiService {
 
             // Asenkron çağrı
             CompletableFuture<AiResponse> aiResponseFuture = aiProcessor.processWithAi(textToAnalyze, request.getAnalysisType(), savedAiRequest);
-            AiResponse aiResponse = aiResponseFuture.join(); // Senkron sonuç bekleme, veya async devam edilebilir
+            AiResponse aiResponse = aiResponseFuture.join(); // Sinxron nəticəni gözləmək üçün
 
             if (aiResponse == null || !aiResponse.isSuccess()) {
                 aiResponse = AiResponse.builder()
@@ -86,6 +91,7 @@ public class AiService {
                     .pdfId(String.valueOf(request.getPdfId()))
                     .extractedText(request.getExtractedText())
                     .analysisType(request.getAnalysisType())
+                    .hash(request.getHash())
                     .requestDate(LocalDateTime.now())
                     .build();
             final AiRequest savedErrorRequest = aiRequestRepository.save(errorRequest);

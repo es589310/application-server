@@ -12,4 +12,5 @@ public class AIAnalysisRequest {
     private String extractedText;
     private String analysisType;
     private String model;
+    private String hash; //SHA-256 hash
 }
